@@ -11,7 +11,7 @@ def extract(keras_model, keras_preprocess, image_list, shape, summary = False) -
 
     Example of usage:
 
-    import kerfex as krf
+    from feature_extraction import extract
     import pandas as pd
     from keras.preprocessing import image
     from keras.applications.vgg16 import VGG16 as vgg
@@ -61,4 +61,7 @@ def extract(keras_model, keras_preprocess, image_list, shape, summary = False) -
     df = df.loc[:, (df != 0).any(axis=0)]
     df.columns = np.arange(0,len(df.columns))
     
+    # Add image names to the dataframe
+    df['image'] = [img.filename for img in image_list]
+
     return df
