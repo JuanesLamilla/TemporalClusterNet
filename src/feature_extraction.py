@@ -60,8 +60,5 @@ def extract(keras_model, keras_preprocess, image_list, shape, summary = False) -
     df = pd.DataFrame.from_records(features)
     df = df.loc[:, (df != 0).any(axis=0)]
     df.columns = np.arange(0,len(df.columns))
-    
-    # Add image names to the dataframe
-    df['image'] = [img.filename for img in image_list]
 
     return df
