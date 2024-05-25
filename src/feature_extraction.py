@@ -1,8 +1,9 @@
 import numpy as np
 import pandas as pd
-from keras.models import Model
-from keras.preprocessing import image
-from keras.layers import Flatten, Input
+from keras.models import Model # type: ignore
+from keras.preprocessing import image # type: ignore
+from keras.layers import Flatten, Input # type: ignore
+from tensorflow.keras.layers import Input, GlobalAveragePooling2D # type: ignore
 
 def extract(keras_model, keras_preprocess, image_list, shape, summary = False) -> pd.DataFrame:
     """
@@ -52,12 +53,15 @@ def extract(keras_model, keras_preprocess, image_list, shape, summary = False) -
     model_input = Input(shape=shape, name='input')
     
     output = model(model_input)
-    x = Flatten(name='flatten')(output)
+    # x = Flatten(name='flatten')(output)
+    x = GlobalAveragePooling2D(name='global_avg_pool')(output)
     
     extractor = Model(inputs=model_input, outputs=x)
     features = extractor.predict(images)
 
-    df = pd.DataFrame.from_records(features)
+    # df = pd.DataFrame.from_records(features)
+    df = pd.DataFrame(features)
+
     df = df.loc[:, (df != 0).any(axis=0)]
     df.columns = np.arange(0,len(df.columns))
 
