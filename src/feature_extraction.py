@@ -1,9 +1,11 @@
+# type: ignore
+
 import numpy as np
 import pandas as pd
-from keras.models import Model # pylint: disable=import-error
+from keras.models import Model # pylint: disable=import-error 
 from keras.preprocessing import image # pylint: disable=import-error
 from keras.layers import Flatten, Input # pylint: disable=import-error
-from tensorflow.keras.layers import Input, GlobalAveragePooling2D # pylint: disable=import-error
+from tensorflow.keras.layers import GlobalAveragePooling2D # pylint: disable=import-error, no-name-in-module
 
 def extract(keras_model, keras_preprocess, image_list, shape, summary = False) -> pd.DataFrame:
     """
