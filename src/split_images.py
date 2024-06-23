@@ -1,7 +1,7 @@
 from shapely.geometry import box
 
 # Function to split geometry into smaller subregions
-def split_geometry(geometry, num_parts) -> list:
+def split_geometry(geometry, x_num_parts, y_num_parts) -> list:
     '''
     For running our models on the subset, we must convert the Google Earth Engine image to an array that can be used by the scikit-learn library. 
     Unfortunately, there is no direct way to do this. 
@@ -15,12 +15,34 @@ def split_geometry(geometry, num_parts) -> list:
     ymin = bounds['coordinates'][0][0][1]
     xmax = bounds['coordinates'][0][2][0]
     ymax = bounds['coordinates'][0][2][1]
-    width = (xmax - xmin) / num_parts
-    height = (ymax - ymin) / num_parts
+    width = (xmax - xmin) / x_num_parts
+    height = (ymax - ymin) / y_num_parts
 
     subgeometries = []
-    for i in range(num_parts):
-        for j in range(num_parts):
+    for i in range(x_num_parts):
+        for j in range(y_num_parts):
+            subgeometry = box(xmin + i * width, ymin + j * height,
+                              xmin + (i + 1) * width, ymin + (j + 1) * height)
+            subgeometries.append(subgeometry)
+
+    return subgeometries
+
+
+# Function to split geometry into smaller subregions but by size of the parts
+def split_geometry_by_size(geometry, x_num_parts, y_num_parts) -> list:
+
+    bounds = geometry.bounds().getInfo()
+    # Extracting bounding coordinates
+    xmin = bounds['coordinates'][0][0][0]
+    ymin = bounds['coordinates'][0][0][1]
+    xmax = bounds['coordinates'][0][2][0]
+    ymax = bounds['coordinates'][0][2][1]
+    width = (xmax - xmin) / x_num_parts
+    height = (ymax - ymin) / y_num_parts
+
+    subgeometries = []
+    for i in range(x_num_parts):
+        for j in range(y_num_parts):
             subgeometry = box(xmin + i * width, ymin + j * height,
                               xmin + (i + 1) * width, ymin + (j + 1) * height)
             subgeometries.append(subgeometry)
