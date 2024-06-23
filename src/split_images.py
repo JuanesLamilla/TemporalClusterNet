@@ -1,4 +1,5 @@
 from shapely.geometry import box
+import numpy as np
 
 # Function to split geometry into smaller subregions
 def split_geometry(geometry, x_num_parts, y_num_parts) -> list:
@@ -28,23 +29,25 @@ def split_geometry(geometry, x_num_parts, y_num_parts) -> list:
     return subgeometries
 
 
-# Function to split geometry into smaller subregions but by size of the parts
-def split_geometry_by_size(geometry, x_num_parts, y_num_parts) -> list:
+def haversine(lat1, lon1, lat2, lon2) -> float:
+    '''
+    The haversine formula calculates the shortest distance between two points on a sphere using their latitudes and longitudes measured along the surface.
+    '''
+    R = 6378137  # radius of Earth in meters
+    phi_1 = np.radians(lat1)
+    phi_2 = np.radians(lat2)
 
-    bounds = geometry.bounds().getInfo()
-    # Extracting bounding coordinates
-    xmin = bounds['coordinates'][0][0][0]
-    ymin = bounds['coordinates'][0][0][1]
-    xmax = bounds['coordinates'][0][2][0]
-    ymax = bounds['coordinates'][0][2][1]
-    width = (xmax - xmin) / x_num_parts
-    height = (ymax - ymin) / y_num_parts
+    delta_phi = np.radians(lat2 - lat1)
+    delta_lambda = np.radians(lon2 - lon1)
 
-    subgeometries = []
-    for i in range(x_num_parts):
-        for j in range(y_num_parts):
-            subgeometry = box(xmin + i * width, ymin + j * height,
-                              xmin + (i + 1) * width, ymin + (j + 1) * height)
-            subgeometries.append(subgeometry)
+    a = np.sin(delta_phi / 2.0) ** 2 + np.cos(phi_1) * np.cos(phi_2) * np.sin(delta_lambda / 2.0) ** 2
+    c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1 - a))
 
-    return subgeometries
+    meters = R * c  # output distance in meters
+    return meters
+
+def calc_segment_count(img_height, img_width, desired_clip_height, desired_clip_width) -> tuple:
+    '''
+    The function calc_segment_count() calculates the number of vertical and horizontal segments that an image should be split into based on the desired height and width of the segments.
+    '''
+    return (img_height / desired_clip_height, img_width / desired_clip_width)
