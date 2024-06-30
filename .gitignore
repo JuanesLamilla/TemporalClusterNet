@@ -1,6 +1,7 @@
 # Temporary files
 temporary
 temporary_tegucigalpa
+image_clips
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

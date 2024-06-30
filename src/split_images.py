@@ -1,5 +1,6 @@
 from shapely.geometry import box
 import numpy as np
+from math import ceil
 
 # Function to split geometry into smaller subregions
 def split_geometry(geometry, x_num_parts, y_num_parts) -> list:
@@ -29,10 +30,23 @@ def split_geometry(geometry, x_num_parts, y_num_parts) -> list:
     return subgeometries
 
 
-def haversine(lat1, lon1, lat2, lon2) -> float:
+def haversine(lat1=None, lon1=None, lat2=None, lon2=None, coords=None) -> float:
     '''
     The haversine formula calculates the shortest distance between two points on a sphere using their latitudes and longitudes measured along the surface.
     '''
+    if coords is not None:
+
+        if len(coords) != 4:
+            raise ValueError("If 'coords' is used, it must contain exactly 4 values.")
+        
+        if any(v is not None for v in [lat1, lon1, lat2, lon2]):
+            raise Warning("Both 'coords' and lat/lon values were provided. Using 'coords'.")
+
+        lat1, lon1, lat2, lon2 = coords
+    
+    if any(v is None for v in [lat1, lon1, lat2, lon2]) and coords is None:
+        raise ValueError("All coordinates must be provided if 'coords' is not used.")
+
     R = 6378137  # radius of Earth in meters
     phi_1 = np.radians(lat1)
     phi_2 = np.radians(lat2)
@@ -46,8 +60,9 @@ def haversine(lat1, lon1, lat2, lon2) -> float:
     meters = R * c  # output distance in meters
     return meters
 
+
 def calc_segment_count(img_height, img_width, desired_clip_height, desired_clip_width) -> tuple:
     '''
     The function calc_segment_count() calculates the number of vertical and horizontal segments that an image should be split into based on the desired height and width of the segments.
     '''
-    return (img_height / desired_clip_height, img_width / desired_clip_width)
+    return (ceil(img_height / desired_clip_height), ceil(img_width / desired_clip_width))
