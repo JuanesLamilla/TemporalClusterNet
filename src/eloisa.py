@@ -20,6 +20,7 @@ from tqdm import tqdm
 
 import matplotlib.pyplot as plt
 
+
 import sqlite3
 import pickle
 
@@ -27,6 +28,8 @@ import json
 
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
+from sklearn.metrics import silhouette_score
+
 
 sys.path.insert(1, os.path.join('src'))
 import feature_extraction as fe # pylint: disable=wrong-import-position
@@ -225,3 +228,46 @@ class Eloisa:
         pca = PCA(n_components=n_components, random_state=self._seed)
         pca.fit(self._data[year][model.__name__])
         self._data[year][model.__name__ + "_clustered"] = pd.DataFrame(pca.transform(self._data[year][model.__name__ + "_clustered"]), index=self._data[year][model.__name__ + "_clustered"].index)
+
+    def calc_silhouette_score(self, year, model, kmax=100, show_plot=True):
+        """Calculates the silhouette score for different numbers of clusters."""
+
+        sil = []
+
+        for k in range(2, kmax+1):
+            kmeans = KMeans(n_clusters=k, random_state=self._seed).fit(self._data[year][model.__name__ + "_clustered"])
+            labels = kmeans.labels_
+            sil.append(silhouette_score(self._data[year][model.__name__ + "_clustered"], labels, metric='euclidean'))
+
+        if show_plot:
+            # Plot silhouette score
+            plt.figure(figsize=(10, 6))
+            plt.plot(range(2, kmax+1), sil, marker='o')
+            plt.xlabel('Number of Clusters')
+            plt.ylabel('Silhouette Score')
+            plt.title('Silhouette Score vs. Number of Clusters')
+            plt.grid(True)
+            plt.show()
+
+        return sil
+    
+    def plot_elbow_curve(self, year, model, kmax=100):
+        """Plots the elbow method for different numbers of clusters."""
+        # Create elbow plot
+        X = self._data[year][model.__name__ + "_clustered"]
+        distorsions = []
+        for k in range(2, kmax):
+            kmeans = KMeans(n_clusters=k)
+            kmeans.fit(X)
+            distorsions.append(kmeans.inertia_)
+
+        fig = plt.figure(figsize=(15, 5))
+        plt.plot(range(2, kmax), distorsions)
+        plt.grid(True)
+        plt.title('Elbow curve')
+
+    def calc_kmeans_clusters(self, year, model, n_clusters):
+        """Calculates the KMeans clusters for the features."""
+
+        kmeans = KMeans(n_clusters=n_clusters, random_state=self._seed)
+        self._data[year][model.__name__ + "_cluster"] = kmeans.fit_predict(self._data[year][model.__name__ + "_clustered"])
