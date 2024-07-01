@@ -177,8 +177,6 @@ class AnalysisImage:
             # Split geometry into smaller subregions (to bypass Earth Engine export limit)
             subgeometries = split_geometry(self.geometry_sd, x_num_parts=x_num_parts, y_num_parts=y_num_parts)
 
-            count = 0
-
             # Export and download each subregion
             for i, subgeometry in enumerate(tqdm(subgeometries)):
                 output_filename = os.path.join(temp_dir, f"{file_name}_{i}.tif")
@@ -193,10 +191,6 @@ class AnalysisImage:
                 # Concatenate the new row to the existing DataFrame
                 image_coords = pd.concat([image_coords, new_row], ignore_index=True)
 
-                # Stop loop
-                if count == 2:
-                    break
-                count += 1
 
             # Read and merge downloaded images
             output_files = [os.path.join(temp_dir, f"{file_name}_{i}.tif") for i in range(len(subgeometries))]
