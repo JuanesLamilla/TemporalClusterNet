@@ -162,7 +162,18 @@ class Eloisa:
 
         self._data[year]["image_list"] = image_list
 
+    def show_clip_by_year(self, years: list, index: int):
+        """Displays the image clip for the specified years and index."""
 
+        fig, axes = plt.subplots(1, len(years), figsize=(20, 10))
+        for i, ax in enumerate(axes.flat):
+            ax.imshow(self._data[years[i]]["image_list"][index])
+            ax.axis("off")
+            ax.set_title(f"{years[i]}")
+
+        plt.tight_layout()
+        plt.show()
+    
     def show_images_sample(self, year, rows=2, cols=5):
         """Displays a sample of images from the specified year."""
         # Show the images in image_list_testing
@@ -178,22 +189,7 @@ class Eloisa:
     def extract_features(self, year, model, preprocess_input):
         """Extracts features from the images using a pre-trained model."""
 
-        # query = """
-        #     SELECT 1 FROM images
-        #     WHERE year = ? AND model_name = ?
-        #     LIMIT 1;
-        #     """
-        # cursor.execute(query, (year, model.__name__))
-
-        # # Fetch the results
-        # result = cursor.fetchone()
-
-        # if result:
-        #     print("Value exists in the column for the specified condition.")
-        # else:
-        #     print("Value does not exist in the column for the specified condition.")
         
-        # Check if model already exists in Eloisa data
         if model.__name__ not in self._data[year]:
             self._data[year][model.__name__] = fe.extract(model, preprocess_input, self._data[year]["image_list"], self.image_shape)
         else:
@@ -267,14 +263,15 @@ class Eloisa:
 
             self._data[year][model_name].loc[i] = json.loads(features)
 
-            if features_reduced is not None:
+
+            if features_reduced is not None and features_reduced != 'null':
 
                 if model_name + '_reduced' not in self._data[year]:
                     self._data[year][model_name + '_reduced'] = pd.DataFrame(columns=np.arange(0, len(json.loads(features_reduced))))
 
                 self._data[year][model_name + '_reduced'].loc[i] = json.loads(features_reduced)
 
-            if cluster is not None:
+            if cluster is not None and cluster != 'null':
 
                 if model_name + "_cluster" not in self._data[year]:
                     self._data[year][model_name + "_cluster"] = []

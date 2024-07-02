@@ -158,7 +158,7 @@ class AnalysisImage:
         
         return [self.left, self.right, self.top, self.bottom]
 
-    def extract_clips_to_folder(self, folder_name, file_name, x_num_parts, y_num_parts):
+    def extract_clips_to_folder(self, folder_name, file_name, x_num_parts, y_num_parts, continue_preexisting=False):
         """Extracts the image clips to a folder."""
 
         # Create a directory for temporary files if it doesn't exist
@@ -169,7 +169,7 @@ class AnalysisImage:
         output_files = []
 
         output_path = os.path.join(temp_dir, f"{file_name}_0.tif")
-        if not os.path.exists(output_path):
+        if not os.path.exists(output_path) or continue_preexisting:
 
             # Create dataframe to store image coordinates
             image_coords = pd.DataFrame(columns=["file_name", "x", "y"])
@@ -180,6 +180,10 @@ class AnalysisImage:
             # Export and download each subregion
             for i, subgeometry in enumerate(tqdm(subgeometries)):
                 output_filename = os.path.join(temp_dir, f"{file_name}_{i}.tif")
+
+                if continue_preexisting and os.path.exists(output_filename):
+                    continue
+
                 # Convert Shapely geometry to GeoJSON
                 geojson_geometry = json.dumps(mapping(subgeometry))
 
