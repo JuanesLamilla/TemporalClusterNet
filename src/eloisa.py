@@ -2,7 +2,7 @@
 
 import os, sys
 
-from collections import defaultdict
+from collections import defaultdict, Counter
 
 from copy import deepcopy
 from pprint import pprint
@@ -170,14 +170,23 @@ class Eloisa:
 
         self._data[year]["image_list"] = image_list
 
-    def show_clip_by_year(self, years: list, index: int):
+    def show_clip_by_year(self, years: list, index: int, model=None):
         """Displays the image clip for the specified years and index."""
 
         fig, axes = plt.subplots(1, len(years), figsize=(20, 10))
         for i, ax in enumerate(axes.flat):
+            
+            
+
             ax.imshow(self._data[years[i]]["image_list"][index])
             ax.axis("off")
-            ax.set_title(f"{years[i]}")
+
+            if model is not None and self._data[years[i]][model.__name__ + "_cluster"] is not None:
+
+                ax.set_title(f"{years[i]} (Cluster: {self._data[years[i]][model.__name__ + "_cluster"][index]})")
+
+            else:
+                ax.set_title(f"{years[i]}")
 
         plt.tight_layout()
         plt.show()
@@ -243,13 +252,13 @@ class Eloisa:
 
                     # Convert features to json
                     features_as_json = json.dumps(row.values.flatten().tolist())
-                    features_reduced_as_json = json.dumps(self._data[year][model_name + "_reduced"].iloc[j].values.flatten().tolist() 
+                    features_reduced_as_json = json.dumps(self._data[year][model_name + "_reduced"][j].values.flatten().tolist() 
                                                           if model_name + "_reduced" in self._data[year] else None)
-                    cluster_int = int(self._data[year][model_name + "_cluster"][i]) if model_name + "_cluster" in self._data[year] else None
+                    cluster_int = int(self._data[year][model_name + "_cluster"][j]) if model_name + "_cluster" in self._data[year] else None
 
                     self._database.execute('''UPDATE images
                         SET features = ?, features_reduced = ?, model_name = ?, cluster = ?
-                        WHERE year = ? AND image_clip = ?''', 
+                        WHERE year = ? AND image = ?''', 
                         (features_as_json, features_reduced_as_json, model_name, cluster_int, year, self.image_names[year][j]))
                     
                     j += 1
@@ -485,3 +494,22 @@ class Eloisa:
             end_idx = start_idx + len(self._data[year][model.__name__ + "_reduced"])
             self._data[year][model.__name__ + "_cluster"] = kmeans_labels[start_idx:end_idx]
             start_idx = end_idx
+
+    def plot_cluster_counts(self, years, model):
+        """Plots the counts of each cluster for all years."""
+        cluster_counts = {}
+        for year in years:
+
+            for k, v in dict(Counter(self._data[year][model.__name__ + "_cluster"])).items():
+                if k in cluster_counts:
+                    cluster_counts[k] = cluster_counts[k] + v
+                else:
+                    cluster_counts[k] = v
+
+        # Plot cluster distribution
+        plt.figure(figsize=(12, 6))
+        plt.bar(cluster_counts.keys(), cluster_counts.values())
+        plt.xlabel("Cluster Number")
+        plt.ylabel("Number of Images")
+        plt.title("Cluster Distribution")
+        plt.show()
