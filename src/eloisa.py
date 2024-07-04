@@ -30,6 +30,8 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 from sklearn.metrics import silhouette_score
 
+import geopandas as gpd
+
 
 sys.path.insert(1, os.path.join('src'))
 import feature_extraction as fe # pylint: disable=wrong-import-position
@@ -513,3 +515,35 @@ class Eloisa:
         plt.ylabel("Number of Images")
         plt.title("Cluster Distribution")
         plt.show()
+
+    def get_cluster_location_info(self, year, model, subgeometries, dissolve_by_cluster=False):
+        """Returns information about all image clips stored in the Eloisa object."""
+        cluster_location_info = pd.DataFrame()
+
+        cluster_location_info["path"] = self.image_names[2018]
+        cluster_location_info["image_num"] = cluster_location_info["path"].str.extract(r"(\d+)\.tif")
+        cluster_location_info["cluster"] = self._data[2018][model.__name__ + "_cluster"]
+
+        for i, subgeometry in enumerate(subgeometries):
+            cluster_location_info.loc[cluster_location_info["image_num"] == str(i), "geometry"] = subgeometry
+
+        cluster_location_info = gpd.GeoDataFrame(cluster_location_info, geometry="geometry")
+        cluster_location_info.crs = "EPSG:4326"
+
+        if dissolve_by_cluster:
+
+            # Create a new Geodataframe where all rows with the same cluster are join together
+            cluster_location_info = cluster_location_info.dissolve(by="cluster")
+
+            # Drop image_num column
+            cluster_location_info.drop(columns="image_num", inplace=True)
+
+            # Make create a column with the cluster number
+            cluster_location_info["cluster"] = cluster_location_info.index
+
+        return cluster_location_info
+
+        
+
+
+

@@ -1,7 +1,8 @@
-# Temporary files
+# Temporary and large files
 temporary
 temporary_tegucigalpa
 image_clips
+eloisa_databases
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
