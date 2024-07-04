@@ -99,6 +99,8 @@ class Eloisa:
             )
             self._database.commit()
 
+    def __getitem__(self, idx):
+        return self._data[idx]
         
 
     def close_db(self):

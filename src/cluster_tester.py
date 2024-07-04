@@ -7,6 +7,10 @@ import geopandas as gpd
 import pandas as pd
 import numpy as np
 
+from tqdm import tqdm
+
+from itertools import combinations
+
 # Import precision_score and recall_score from sklearn.metrics
 from sklearn.metrics import precision_score, recall_score
 
@@ -32,6 +36,18 @@ class ClusterTester:
         self.validation_data = validation_data
 
         self.sampling_points = None
+        self.cluster_metrics = None
+        self.combination_metrics = None
+
+        self.points_pivot = pd.DataFrame()
+
+        # Generate a colormap with x distinct colors
+        num_clusters = len(self.cluster_location_info['cluster'].unique())
+        cmap = plt.get_cmap('tab20')  # You can choose other colormaps like 'tab20', 'tab20c', etc.
+        colors = cmap(np.linspace(0, 1, num_clusters))
+
+        # Create a dictionary mapping each cluster number to a color
+        self.colormap = {i + 1: mcolors.rgb2hex(colors[i]) for i in range(num_clusters)}
     
     def plot_clusters(self, sampling_points=None, show_clusters=True, show_image=True, show_validation_data=True, zoom=13):
         """Plot clusters, image and validation data."""
@@ -49,16 +65,7 @@ class ClusterTester:
             m.add_layer(self.analysis_image.sd_cutout, visualization, 'RGB')
 
         if show_clusters:
-            # Generate a colormap with x distinct colors
-            num_clusters = len(self.cluster_location_info['cluster'].unique())
-            cmap = plt.get_cmap('tab20')  # You can choose other colormaps like 'tab20', 'tab20c', etc.
-            colors = cmap(np.linspace(0, 1, num_clusters))
-
-            # Create a dictionary mapping each cluster number to a color
-            colormap = {i + 1: mcolors.rgb2hex(colors[i]) for i in range(num_clusters)}
-
-        
-            m.add_gdf(self.cluster_location_info, layer_name='Clusters', fill_colors=list(colormap.values()), style={'fillOpacity': 0.75, 'opacity': 0},
+            m.add_gdf(self.cluster_location_info, layer_name='Clusters', fill_colors=list(self.colormap.values()), style={'fillOpacity': 0.75, 'opacity': 0},
                 hover_style={'fillOpacity': 0.25, 'opacity': 1})
 
         if show_validation_data:
@@ -101,26 +108,92 @@ class ClusterTester:
 
         unique_clusters = self.sampling_points.drop(columns='geometry')['cluster'].unique()
 
-        # Create a new dataframe to hold the transformed data
-        points_pivot = pd.DataFrame()
-
         # Retain the "within_target" column
-        points_pivot['within_target'] = self.sampling_points['within_target']
+        self.points_pivot['within_target'] = self.sampling_points['within_target'] # pylint: disable=unsubscriptable-object
 
         # Add new columns for each cluster with True/False values
         for cluster in unique_clusters:
-            points_pivot[cluster] = (self.sampling_points['cluster'] == cluster)
+            self.points_pivot[cluster] = (self.sampling_points['cluster'] == cluster) # pylint: disable=unsubscriptable-object
 
 
         # For each cluster, calculate the precision and recall, and store them in a dataframe
         precision_recall_df = pd.DataFrame(columns=["cluster", "precision", "recall"])
 
         for cluster in unique_clusters:
-            precision = precision_score(points_pivot['within_target'], points_pivot[cluster])
-            recall = recall_score(points_pivot['within_target'], points_pivot[cluster])
+            precision = precision_score(self.points_pivot['within_target'], self.points_pivot[cluster])
+            recall = recall_score(self.points_pivot['within_target'], self.points_pivot[cluster])
 
             f1 = 2 * (precision * recall) / (precision + recall)
 
             precision_recall_df = pd.concat([precision_recall_df, pd.DataFrame({"cluster": cluster, "precision": precision, "recall": recall, "F1": f1}, index=[0])], ignore_index=True)
 
+        self.cluster_metrics = precision_recall_df
         return precision_recall_df
+
+    def group_clusters_and_calc_metrics(self, precision_min): #TODO: Does this work properly?
+        """Test groups of clusters and calculate metrics."""
+
+        if self.cluster_metrics is None:
+            raise ValueError("Cluster metrics have not been calculated. Run calc_cluster_metrics() first.")
+
+        # Create a subset of the clusters with a Precision score higher than precision_min
+        high_precision_clusters = self.cluster_metrics[self.cluster_metrics['precision'] >= precision_min]['cluster'].tolist() # pylint: disable=unsubscriptable-object
+
+        # Create a new empty dataframe
+        combinations_df = pd.DataFrame(columns=["combination"])
+
+        # Create a list of all possible combinations of clusters
+
+        for i in range(1, len(high_precision_clusters) + 1):
+            for combination in combinations(high_precision_clusters, i):
+                combination = list(combination)
+
+                if len(combination) > 5:
+                    break
+
+                combinations_df = pd.concat([combinations_df, pd.DataFrame({"combination": [combination]})], ignore_index=True)
+
+
+        # For each combination of clusters, calculate the precision and recall
+        for i, row in tqdm(combinations_df.iterrows(), total=combinations_df.shape[0]):
+            combination = row['combination']
+
+
+            precision = precision_score(self.points_pivot['within_target'], self.points_pivot[combination].any(axis=1))
+            recall = recall_score(self.points_pivot['within_target'], self.points_pivot[combination].any(axis=1))
+
+            
+            combinations_df.loc[i, "precision"] = precision
+            combinations_df.loc[i, "recall"] = recall
+
+        # Sort the combinations by precision
+        combinations_df = combinations_df.sort_values(by="precision", ascending=False)
+
+        combinations_df["F1"] = 2 * (combinations_df["precision"] * combinations_df["recall"]) / (combinations_df["precision"] + combinations_df["recall"])
+
+        self.combination_metrics = combinations_df
+        return combinations_df
+
+    def plot_top_cluster_combos(self, metric, n_combos=5, zoom=13, show_validation_data=True):
+        """Plot the top n_combos cluster combinations by metric score."""
+        
+        if self.combination_metrics is None:
+            raise ValueError("Cluster metrics have not been calculated. Run group_clusters_and_calc_metrics() first.")
+
+        if metric not in ["precision", "recall", "F1"]:
+            raise ValueError("Metric must be either 'precision', 'recall', or 'F1'.")
+
+        m = geemap.Map()
+        m.set_center(self.analysis_image.center[1], self.analysis_image.center[0], zoom)
+
+        if show_validation_data:
+            m.add_gdf(self.validation_data, layer_name='Validation Data', fill_colors='red', style={'fillOpacity': 0.75, 'opacity': 0})
+
+        cluster_colors = list(self.colormap.values())
+
+        for i, row in self.combination_metrics.sort_values(by=metric, ascending=False).head(n_combos).iterrows():
+            combination = row['combination']
+            cluster_gdf_subset = self.cluster_location_info[self.cluster_location_info.index.isin(combination)]
+            m.add_gdf(cluster_gdf_subset, layer_name=f'Combination {i+1}', fill_colors=cluster_colors, style={'fillOpacity': 0.75, 'opacity': 0})
+
+        return m
