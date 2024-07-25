@@ -55,16 +55,32 @@ def extract(keras_model, keras_preprocess, image_list, shape, summary = False) -
     model_input = Input(shape=shape, name='input')
     
     output = model(model_input)
-    # x = Flatten(name='flatten')(output)
-    x = GlobalAveragePooling2D(name='global_avg_pool')(output)
+    x = Flatten(name='flatten')(output)
+    # x = GlobalAveragePooling2D(name='global_avg_pool')(output)
     
     extractor = Model(inputs=model_input, outputs=x)
-    features = extractor.predict(images)
+    # features = extractor.predict(images)
 
-    # df = pd.DataFrame.from_records(features)
+    # # df = pd.DataFrame.from_records(features)
+    # df = pd.DataFrame(features)
+
+    # df = df.loc[:, (df != 0).any(axis=0)]
+    # df.columns = np.arange(0,len(df.columns))
+
+    # Process images in smaller batches
+    batch_size = 1000
+    num_images = images.shape[0]
+    features_list = []
+
+    for i in range(0, num_images, batch_size):
+        batch_images = images[i:i+batch_size]
+        batch_features = extractor.predict(batch_images)
+        features_list.append(batch_features)
+
+    features = np.vstack(features_list)
+
     df = pd.DataFrame(features)
-
     df = df.loc[:, (df != 0).any(axis=0)]
-    df.columns = np.arange(0,len(df.columns))
+    df.columns = np.arange(0, len(df.columns))
 
     return df

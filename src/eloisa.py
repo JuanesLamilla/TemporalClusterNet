@@ -14,12 +14,14 @@ import pandas as pd
 from sklearn.cluster import KMeans
 
 import keras
-from keras.preprocessing import image # pylint: disable=import-error 
+# from keras.preprocessing import image # pylint: disable=import-error 
+from keras.preprocessing import image as keras_image # pylint: disable=import-error 
 
 from tqdm import tqdm
 
 import matplotlib.pyplot as plt
 
+from threading import Lock
 
 import sqlite3
 import pickle
@@ -27,10 +29,12 @@ import pickle
 import json
 
 from sklearn.preprocessing import StandardScaler
-from sklearn.decomposition import PCA
+from sklearn.decomposition import PCA, IncrementalPCA
 from sklearn.metrics import silhouette_score
 
 import geopandas as gpd
+
+import concurrent.futures
 
 
 sys.path.insert(1, os.path.join('src'))
@@ -71,6 +75,7 @@ class Eloisa:
         self._seed = seed
         self.image_shape = image_shape
         self.image_names = {}
+        self._lock = Lock()
 
         self.db_path = os.path.join(db_folder, f"{name}.db")
 
@@ -269,88 +274,192 @@ class Eloisa:
 
         self._database.commit()
 
-    def load_all_features_from_db(self):
-        """Loads all features from the Eloisa database."""
-        cursor = self._database.cursor()
-        cursor.execute('''
-            SELECT year, image_clip, image, bands_used, model_name, features, features_reduced, cluster
-            FROM images
-        ''')
+    # def load_all_features_from_db(self):
+    #     """Loads all features from the Eloisa database."""
+    #     cursor = self._database.cursor()
+    #     cursor.execute('''
+    #         SELECT year, image_clip, image, bands_used, model_name, features, features_reduced, cluster
+    #         FROM images
+    #     ''')
 
-        for i, row in enumerate(tqdm(cursor.fetchall())):
-            year, image_clip, image, bands_used, model_name, features, features_reduced, cluster = row
+    #     for i, row in enumerate(tqdm(cursor.fetchall())):
+    #         year, image_clip, image, bands_used, model_name, features, features_reduced, cluster = row
 
+    #         if year not in self._data:
+    #             self._data[year] = {}
+
+    #         if 'image_list' not in self._data[year]:
+    #             self._data[year]['image_list'] = []
+    #             self.image_names[year] = []
+            
+    #         bands_used_list = json.loads(bands_used)
+
+    #         with rasterio.open(image) as src:
+
+    #             img = src.read(bands_used_list)  # Read the first three channels (RGB)
+    #             img = np.transpose(img, (1, 2, 0))  # Transpose to (height, width, channels)
+                
+    #             # Normalize to 0-255 and convert to uint8
+    #             img = (img - img.min()) / (img.max() - img.min()) * 255
+    #             img = img.astype(np.uint8)
+
+    #             # Convert to Pillow image
+    #             pil_img = keras.preprocessing.image.array_to_img(img, scale=False)
+    #             pil_img = pil_img.resize((self.image_shape[0], self.image_shape[1]))  # Resize the image to the desired size
+
+    #             self.image_names[year].append(image)
+
+    #             self._data[year]["image_list"].insert(i, pil_img)
+
+    #         if features is not None and features != 'null':
+    #             if model_name not in self._data[year]:
+    #                 self._data[year][model_name] = pd.DataFrame(columns=np.arange(0, len(json.loads(features))))
+
+    #             self._data[year][model_name].loc[i] = json.loads(features)
+
+
+    #         if features_reduced is not None and features_reduced != 'null':
+
+    #             if model_name + '_reduced' not in self._data[year]:
+    #                 self._data[year][model_name + '_reduced'] = pd.DataFrame(columns=np.arange(0, len(json.loads(features_reduced))))
+
+    #             self._data[year][model_name + '_reduced'].loc[i] = json.loads(features_reduced)
+
+    #         if cluster is not None and cluster != 'null':
+
+    #             if model_name + "_cluster" not in self._data[year]:
+    #                 self._data[year][model_name + "_cluster"] = []
+                
+    #             self._data[year][model_name + "_cluster"].insert(i, cluster)
+
+    def process_row(self, row, i):
+        year, image_clip, image, bands_used, model_name, features, features_reduced, cluster = row
+
+        with self._lock:  # Ensure thread-safe access to shared data structures
             if year not in self._data:
                 self._data[year] = {}
 
             if 'image_list' not in self._data[year]:
                 self._data[year]['image_list'] = []
                 self.image_names[year] = []
-            
-            bands_used_list = json.loads(bands_used)
 
-            with rasterio.open(image) as src:
+        bands_used_list = json.loads(bands_used)
 
-                img = src.read(bands_used_list)  # Read the first three channels (RGB)
-                img = np.transpose(img, (1, 2, 0))  # Transpose to (height, width, channels)
-                
-                # Normalize to 0-255 and convert to uint8
-                img = (img - img.min()) / (img.max() - img.min()) * 255
-                img = img.astype(np.uint8)
+        with rasterio.open(image) as src:
+            img = src.read(bands_used_list)  # Read the specified bands
+            img = np.transpose(img, (1, 2, 0))  # Transpose to (height, width, channels)
 
-                # Convert to Pillow image
-                pil_img = keras.preprocessing.image.array_to_img(img, scale=False)
-                pil_img = pil_img.resize((self.image_shape[0], self.image_shape[1]))  # Resize the image to the desired size
+            # Normalize to 0-255 and convert to uint8
+            img = (img - img.min()) / (img.max() - img.min()) * 255
+            img = img.astype(np.uint8)
 
+            # Convert to Pillow image
+            pil_img = keras_image.array_to_img(img, scale=False)
+            pil_img = pil_img.resize((self.image_shape[0], self.image_shape[1]))  # Resize the image to the desired size
+
+            with self._lock:  # Ensure thread-safe access to shared data structures
                 self.image_names[year].append(image)
+                self._data[year]["image_list"].append(pil_img)
 
-                self._data[year]["image_list"].insert(i, pil_img)
-
-            if features is not None and features != 'null':
+        if features is not None and features != 'null':
+            features_data = json.loads(features)
+            with self._lock:  # Ensure thread-safe access to shared data structures
                 if model_name not in self._data[year]:
-                    self._data[year][model_name] = pd.DataFrame(columns=np.arange(0, len(json.loads(features))))
+                    self._data[year][model_name] = pd.DataFrame(columns=np.arange(0, len(features_data)))
 
-                self._data[year][model_name].loc[i] = json.loads(features)
+                self._data[year][model_name].loc[i] = features_data
 
-
-            if features_reduced is not None and features_reduced != 'null':
-
+        if features_reduced is not None and features_reduced != 'null':
+            features_reduced_data = json.loads(features_reduced)
+            with self._lock:  # Ensure thread-safe access to shared data structures
                 if model_name + '_reduced' not in self._data[year]:
-                    self._data[year][model_name + '_reduced'] = pd.DataFrame(columns=np.arange(0, len(json.loads(features_reduced))))
+                    self._data[year][model_name + '_reduced'] = pd.DataFrame(columns=np.arange(0, len(features_reduced_data)))
 
-                self._data[year][model_name + '_reduced'].loc[i] = json.loads(features_reduced)
+                self._data[year][model_name + '_reduced'].loc[i] = features_reduced_data
 
-            if cluster is not None and cluster != 'null':
-
+        if cluster is not None and cluster != 'null':
+            with self._lock:  # Ensure thread-safe access to shared data structures
                 if model_name + "_cluster" not in self._data[year]:
                     self._data[year][model_name + "_cluster"] = []
-                
-                self._data[year][model_name + "_cluster"].insert(i, cluster)
+
+                self._data[year][model_name + "_cluster"].append(cluster)
+
+    def load_all_features_from_db(self):
+        """Loads all features from the Eloisa database."""
+
+        cursor = self._database.cursor()
+        cursor.execute('''
+            SELECT year, image_clip, image, bands_used, model_name, features, features_reduced, cluster
+            FROM images
+        ''')
+
+        batch_size = 10000  # You can adjust the batch size as needed
+        rows = cursor.fetchmany(batch_size)
+        index_offset = 0
+
+        while rows:
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                list(tqdm(executor.map(lambda idx_row: self.process_row(idx_row[1], idx_row[0] + index_offset), enumerate(rows)), total=len(rows)))
+
+            index_offset += batch_size
+            rows = cursor.fetchmany(batch_size)
+
+    # def scale_features(self, years, model):
+    #     """Scales the features using StandardScaler."""
+    #     if isinstance(years, int):
+    #         scaler = StandardScaler()
+    #         self._data[years][model.__name__ + "_reduced"] = scaler.fit_transform(self._data[years][model.__name__])
+    #         return
+
+    #     elif isinstance(years, list):
+
+    #         data_list = [self._data[year][model.__name__] for year in years]
+            
+    #         # Concatenate data from all years
+    #         concatenated_data = pd.concat(data_list, axis=0)
+            
+    #         # Scale the concatenated data
+    #         scaler = StandardScaler()
+    #         scaled_data = scaler.fit_transform(concatenated_data)
+            
+    #         # Split the scaled data back into their respective years
+    #         start_idx = 0
+    #         for year in years:
+    #             end_idx = start_idx + len(self._data[year][model.__name__])
+    #             self._data[year][model.__name__ + "_reduced"] = scaled_data[start_idx:end_idx]
+    #             start_idx = end_idx
+            
+    #         return
+
+    #     else:
+    #         raise ValueError("Year must be an integer or a list of integers.")
 
     def scale_features(self, years, model):
         """Scales the features using StandardScaler."""
         if isinstance(years, int):
             scaler = StandardScaler()
             self._data[years][model.__name__ + "_reduced"] = scaler.fit_transform(self._data[years][model.__name__])
+
+            # Convert to DataFrame
+            self._data[years][model.__name__ + "_reduced"] = pd.DataFrame(self._data[years][model.__name__ + "_reduced"], index=self._data[years][model.__name__].index)
+
             return
 
         elif isinstance(years, list):
-
-            data_list = [self._data[year][model.__name__] for year in years]
-            
-            # Concatenate data from all years
-            concatenated_data = pd.concat(data_list, axis=0)
-            
-            # Scale the concatenated data
+            # Step 1: Initialize the scaler
             scaler = StandardScaler()
-            scaled_data = scaler.fit_transform(concatenated_data)
-            
-            # Split the scaled data back into their respective years
-            start_idx = 0
+
+            # Step 2: Incrementally fit the scaler
             for year in years:
-                end_idx = start_idx + len(self._data[year][model.__name__])
-                self._data[year][model.__name__ + "_reduced"] = scaled_data[start_idx:end_idx]
-                start_idx = end_idx
+                scaler.partial_fit(self._data[year][model.__name__])
+
+            # Step 3: Transform the data in chunks
+            for year in years:
+                self._data[year][model.__name__ + "_reduced"] = scaler.transform(self._data[year][model.__name__])
+
+                # Convert to DataFrame
+                self._data[year][model.__name__ + "_reduced"] = pd.DataFrame(self._data[year][model.__name__ + "_reduced"], index=self._data[year][model.__name__].index)
+
             
             return
 
@@ -360,7 +469,77 @@ class Eloisa:
             
         
 
-    def pca_features(self, years, model, n_components=None, variance_min=None, plot_variance=False):
+    # def pca_features(self, years, model, n_components=None, variance_min=None, plot_variance=False):
+    #     """Performs PCA on the features."""
+
+    #     if n_components is None and variance_min is None:
+    #         raise ValueError("Either n_components or variance_min must be provided.")
+    #     if n_components is not None and variance_min is not None:
+    #         raise ValueError("Only one of n_components or variance_min can be provided.")
+
+    #     if isinstance(years, int):
+
+    #         if n_components is None:
+
+    #             pca = PCA(random_state=self._seed)
+    #             pca.fit(self._data[years][model.__name__ + "_reduced"])
+
+    #             # If you want to retain variance_min% of the variance
+    #             cumulative_explained_variance = np.cumsum(pca.explained_variance_ratio_)
+
+    #             if plot_variance:
+    #                 plt.figure(figsize=(10, 6))
+    #                 plt.plot(range(1, len(cumulative_explained_variance) + 1), cumulative_explained_variance, marker='o', linestyle='--')
+    #                 plt.xlabel('Number of Components')
+    #                 plt.ylabel('Cumulative Explained Variance')
+    #                 plt.title('Explained Variance vs. Number of Components')
+    #                 plt.grid(True)
+    #                 plt.show()
+
+    #             n_components = np.argmax(cumulative_explained_variance >= variance_min) + 1
+    #             print(f'Number of components to retain {variance_min * 100}% variance: {n_components}')
+
+    #         pca = PCA(n_components=n_components, random_state=self._seed)
+    #         pca.fit(self._data[years][model.__name__])
+    #         self._data[years][model.__name__ + "_reduced"] = pd.DataFrame(pca.transform(self._data[years][model.__name__ + "_reduced"]), index=self._data[years][model.__name__].index)
+
+    #     elif isinstance(years, list):
+
+    #         # Collect and concatenate numpy arrays from all specified years
+    #         data_list = [self._data[year][model.__name__ + "_reduced"] for year in years]
+    #         concatenated_data = np.vstack(data_list)
+            
+    #         if n_components is None:
+    #             pca = PCA(random_state=self._seed)
+    #             pca.fit(concatenated_data)
+                
+    #             # If you want to retain variance_min% of the variance
+    #             cumulative_explained_variance = np.cumsum(pca.explained_variance_ratio_)
+                
+    #             if plot_variance:
+    #                 plt.figure(figsize=(10, 6))
+    #                 plt.plot(range(1, len(cumulative_explained_variance) + 1), cumulative_explained_variance, marker='o', linestyle='--')
+    #                 plt.xlabel('Number of Components')
+    #                 plt.ylabel('Cumulative Explained Variance')
+    #                 plt.title('Explained Variance vs. Number of Components')
+    #                 plt.grid(True)
+    #                 plt.show()
+                
+    #             n_components = np.argmax(cumulative_explained_variance >= variance_min) + 1
+    #             print(f'Number of components to retain {variance_min * 100}% variance: {n_components}')
+            
+    #         # Perform PCA with the determined number of components
+    #         pca = PCA(n_components=n_components, random_state=self._seed)
+    #         pca_transformed_data = pca.fit_transform(concatenated_data)
+            
+    #         # Split the PCA-transformed data back into their respective years and convert to DataFrames
+    #         start_idx = 0
+    #         for year, data in zip(years, data_list):
+    #             end_idx = start_idx + len(data)
+    #             self._data[year][model.__name__ + "_reduced"] = pd.DataFrame(pca_transformed_data[start_idx:end_idx], index=self._data[year][model.__name__].index)
+    #             start_idx = end_idx
+    
+    def pca_features(self, years, model, n_components=None, variance_min=None, plot_variance=False, chunk_size=1000):
         """Performs PCA on the features."""
 
         if n_components is None and variance_min is None:
@@ -369,15 +548,26 @@ class Eloisa:
             raise ValueError("Only one of n_components or variance_min can be provided.")
 
         if isinstance(years, int):
+            years = [years]  # Convert to list for uniform handling
 
-            if n_components is None:
+        if isinstance(years, list):
+            pca = IncrementalPCA(n_components=n_components if n_components is not None else None)
 
-                pca = PCA(random_state=self._seed)
-                pca.fit(self._data[years][model.__name__ + "_reduced"])
+            # Accumulate all data
+            all_data = []
+            for year in years:
+                data = self._data[year][model.__name__ + "_reduced"]
+                all_data.append(data)
+            all_data = np.vstack(all_data)
 
-                # If you want to retain variance_min% of the variance
-                cumulative_explained_variance = np.cumsum(pca.explained_variance_ratio_)
+            # Fit IncrementalPCA on the accumulated data in chunks
+            for i in range(0, len(all_data), chunk_size):
+                pca.partial_fit(all_data[i:i + chunk_size])
 
+            # Compute cumulative explained variance
+            cumulative_explained_variance = np.cumsum(pca.explained_variance_ratio_)
+
+            if variance_min is not None:
                 if plot_variance:
                     plt.figure(figsize=(10, 6))
                     plt.plot(range(1, len(cumulative_explained_variance) + 1), cumulative_explained_variance, marker='o', linestyle='--')
@@ -390,47 +580,24 @@ class Eloisa:
                 n_components = np.argmax(cumulative_explained_variance >= variance_min) + 1
                 print(f'Number of components to retain {variance_min * 100}% variance: {n_components}')
 
-            pca = PCA(n_components=n_components, random_state=self._seed)
-            pca.fit(self._data[years][model.__name__])
-            self._data[years][model.__name__ + "_reduced"] = pd.DataFrame(pca.transform(self._data[years][model.__name__ + "_reduced"]), index=self._data[years][model.__name__].index)
+                # Reinitialize IncrementalPCA with determined n_components
+                pca = IncrementalPCA(n_components=n_components)
+                for i in range(0, len(all_data), chunk_size):
+                    pca.partial_fit(all_data[i:i + chunk_size])
 
-        elif isinstance(years, list):
+            # Transform data for each year incrementally
+            for year in years:
+                data = self._data[year][model.__name__ + "_reduced"]
+                transformed_data = []
+                for i in range(0, len(data), chunk_size):
+                    chunk = data[i:i + chunk_size]
+                    transformed_data.append(pca.transform(chunk))
 
-            # Collect and concatenate numpy arrays from all specified years
-            data_list = [self._data[year][model.__name__ + "_reduced"] for year in years]
-            concatenated_data = np.vstack(data_list)
-            
-            if n_components is None:
-                pca = PCA(random_state=self._seed)
-                pca.fit(concatenated_data)
-                
-                # If you want to retain variance_min% of the variance
-                cumulative_explained_variance = np.cumsum(pca.explained_variance_ratio_)
-                
-                if plot_variance:
-                    plt.figure(figsize=(10, 6))
-                    plt.plot(range(1, len(cumulative_explained_variance) + 1), cumulative_explained_variance, marker='o', linestyle='--')
-                    plt.xlabel('Number of Components')
-                    plt.ylabel('Cumulative Explained Variance')
-                    plt.title('Explained Variance vs. Number of Components')
-                    plt.grid(True)
-                    plt.show()
-                
-                n_components = np.argmax(cumulative_explained_variance >= variance_min) + 1
-                print(f'Number of components to retain {variance_min * 100}% variance: {n_components}')
-            
-            # Perform PCA with the determined number of components
-            pca = PCA(n_components=n_components, random_state=self._seed)
-            pca_transformed_data = pca.fit_transform(concatenated_data)
-            
-            # Split the PCA-transformed data back into their respective years and convert to DataFrames
-            start_idx = 0
-            for year, data in zip(years, data_list):
-                end_idx = start_idx + len(data)
-                self._data[year][model.__name__ + "_reduced"] = pd.DataFrame(pca_transformed_data[start_idx:end_idx], index=self._data[year][model.__name__].index)
-                start_idx = end_idx
+                transformed_data = np.vstack(transformed_data)
+                self._data[year][model.__name__ + "_reduced"] = pd.DataFrame(transformed_data, index=data.index)
 
-
+        else:
+            raise ValueError("Year must be an integer or a list of integers.")
 
 
     def calc_silhouette_score(self, years, model, kmax=100, show_plot=True):
@@ -442,10 +609,14 @@ class Eloisa:
 
         sil = []
 
+        distorsions = []
+
         for k in range(2, kmax + 1):
             kmeans = KMeans(n_clusters=k, random_state=self._seed).fit(concatenated_data)
             labels = kmeans.labels_
             sil.append(silhouette_score(concatenated_data, labels, metric='euclidean'))
+
+            distorsions.append(kmeans.inertia_)
 
         if show_plot:
             # Plot silhouette score
@@ -457,7 +628,7 @@ class Eloisa:
             plt.grid(True)
             plt.show()
 
-        return sil
+        return sil, distorsions
     
     def plot_elbow_curve(self, years, model, kmax=100):
         """Plots the elbow method for different numbers of clusters."""
