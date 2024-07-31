@@ -674,31 +674,22 @@ class Eloisa:
 
         return kmeans
     
-    # def subspace_clustering(self, years, model, n_clusters, algorithm="lasso_lars", gamma=50, n_jobs=-1):
-    #     """Performs subspace clustering on the features using ElasticNet."""
-    #     # Collect data from all specified years
-    #     data_list = [self._data[year][model.__name__ + "_reduced"] for year in years]
-    #     concatenated_data = pd.concat(data_list, axis=0)
+    def get_cluster_sequences(self, years, model):
+        """Returns the sequences of clusters as they change over time."""
+        cluster_sequence = []
+        for year in years:
+            cluster_sequence.append(list(self._data[year][model.__name__ + "_cluster"]))
 
-    #     # Sample a subset of the data
-    #     sampled_data = concatenated_data.sample(frac=sample_fraction, random_state=self._seed)
+        cluster_sequence = list(map(list, zip(*cluster_sequence)))
 
-    #     # Perform subspace clustering
-    #     sc = ElasticNetSubspaceClustering(n_clusters=n_clusters, gamma=gamma, n_jobs=n_jobs, algorithm=algorithm)
-    #     sc.fit(sampled_data)
-    #     cluster_labels = sc.labels_
-
-    #     # Split the cluster labels back into their respective years
-    #     start_idx = 0
-    #     for year in years:
-    #         end_idx = start_idx + len(self._data[year][model.__name__ + "_reduced"])
-    #         self._data[year][model.__name__ + "_cluster"] = cluster_labels[start_idx:end_idx]
-    #         start_idx = end_idx
-
-    #     return sc
+        return cluster_sequence
 
     def subspace_clustering(self, years, model, n_clusters, algorithm="lasso_lars", gamma=50, n_jobs=-1, sample_fraction=0.1):
         """Performs subspace clustering on a subset of the features using ElasticNet and applies the results to the rest."""
+
+        if sample_fraction <= 0 or sample_fraction > 1:
+            raise ValueError("sample_fraction must be in the range (0, 1].")
+
         # Collect data from all specified years
         data_list = [self._data[year][model.__name__ + "_reduced"] for year in years]
         concatenated_data = pd.concat(data_list, axis=0)
@@ -711,12 +702,15 @@ class Eloisa:
         sc.fit(sampled_data)
         sampled_labels = sc.labels_
 
-        # Train a classifier on the sampled data to predict cluster labels
-        classifier = RandomForestClassifier(random_state=self._seed)
-        classifier.fit(sampled_data, sampled_labels)
+        if sample_fraction == 1:
+            cluster_labels = sc.labels_
+        else:
+            # Train a classifier on the sampled data to predict cluster labels
+            classifier = RandomForestClassifier(random_state=self._seed)
+            classifier.fit(sampled_data, sampled_labels)
 
-        # Predict cluster labels for the entire dataset
-        cluster_labels = classifier.predict(concatenated_data)
+            # Predict cluster labels for the entire dataset
+            cluster_labels = classifier.predict(concatenated_data)
 
         # Split the cluster labels back into their respective years
         start_idx = 0

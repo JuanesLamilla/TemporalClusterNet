@@ -18,8 +18,9 @@ dependencies:
   - shapely=2.0.3
   - xgboost=2.0.3
   - progressbar2=4.4.2 # Not sure if this is the right version
-  - spams-bin=2.6.10
+  - spams-bin=2.6.10 # Not sure if this is the right version
   - pip # pip=23.4.0 23.3.1
   - pip:
       - tensorflow==2.16.1
-      - spams
+      - pysam==0.22.1 # Not sure if this is the right version
+      - git+https://github.com/jacobkrantz/Simple-HOHMM.git#egg=simple-hohmm
