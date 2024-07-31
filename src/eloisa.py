@@ -11,7 +11,7 @@ import rasterio
 import numpy as np
 import pandas as pd
 
-from sklearn.cluster import KMeans
+from sklearn.cluster import KMeans, OPTICS, DBSCAN
 
 import keras
 # from keras.preprocessing import image # pylint: disable=import-error 
@@ -31,6 +31,7 @@ import json
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA, IncrementalPCA
 from sklearn.metrics import silhouette_score
+from sklearn.ensemble import RandomForestClassifier
 
 import geopandas as gpd
 
@@ -39,6 +40,7 @@ import concurrent.futures
 
 sys.path.insert(1, os.path.join('src'))
 import feature_extraction as fe # pylint: disable=wrong-import-position
+from subspace_clustering.cluster.selfrepresentation import ElasticNetSubspaceClustering 
 
 class Eloisa:
     """
@@ -469,77 +471,7 @@ class Eloisa:
             
         
 
-    # def pca_features(self, years, model, n_components=None, variance_min=None, plot_variance=False):
-    #     """Performs PCA on the features."""
-
-    #     if n_components is None and variance_min is None:
-    #         raise ValueError("Either n_components or variance_min must be provided.")
-    #     if n_components is not None and variance_min is not None:
-    #         raise ValueError("Only one of n_components or variance_min can be provided.")
-
-    #     if isinstance(years, int):
-
-    #         if n_components is None:
-
-    #             pca = PCA(random_state=self._seed)
-    #             pca.fit(self._data[years][model.__name__ + "_reduced"])
-
-    #             # If you want to retain variance_min% of the variance
-    #             cumulative_explained_variance = np.cumsum(pca.explained_variance_ratio_)
-
-    #             if plot_variance:
-    #                 plt.figure(figsize=(10, 6))
-    #                 plt.plot(range(1, len(cumulative_explained_variance) + 1), cumulative_explained_variance, marker='o', linestyle='--')
-    #                 plt.xlabel('Number of Components')
-    #                 plt.ylabel('Cumulative Explained Variance')
-    #                 plt.title('Explained Variance vs. Number of Components')
-    #                 plt.grid(True)
-    #                 plt.show()
-
-    #             n_components = np.argmax(cumulative_explained_variance >= variance_min) + 1
-    #             print(f'Number of components to retain {variance_min * 100}% variance: {n_components}')
-
-    #         pca = PCA(n_components=n_components, random_state=self._seed)
-    #         pca.fit(self._data[years][model.__name__])
-    #         self._data[years][model.__name__ + "_reduced"] = pd.DataFrame(pca.transform(self._data[years][model.__name__ + "_reduced"]), index=self._data[years][model.__name__].index)
-
-    #     elif isinstance(years, list):
-
-    #         # Collect and concatenate numpy arrays from all specified years
-    #         data_list = [self._data[year][model.__name__ + "_reduced"] for year in years]
-    #         concatenated_data = np.vstack(data_list)
-            
-    #         if n_components is None:
-    #             pca = PCA(random_state=self._seed)
-    #             pca.fit(concatenated_data)
-                
-    #             # If you want to retain variance_min% of the variance
-    #             cumulative_explained_variance = np.cumsum(pca.explained_variance_ratio_)
-                
-    #             if plot_variance:
-    #                 plt.figure(figsize=(10, 6))
-    #                 plt.plot(range(1, len(cumulative_explained_variance) + 1), cumulative_explained_variance, marker='o', linestyle='--')
-    #                 plt.xlabel('Number of Components')
-    #                 plt.ylabel('Cumulative Explained Variance')
-    #                 plt.title('Explained Variance vs. Number of Components')
-    #                 plt.grid(True)
-    #                 plt.show()
-                
-    #             n_components = np.argmax(cumulative_explained_variance >= variance_min) + 1
-    #             print(f'Number of components to retain {variance_min * 100}% variance: {n_components}')
-            
-    #         # Perform PCA with the determined number of components
-    #         pca = PCA(n_components=n_components, random_state=self._seed)
-    #         pca_transformed_data = pca.fit_transform(concatenated_data)
-            
-    #         # Split the PCA-transformed data back into their respective years and convert to DataFrames
-    #         start_idx = 0
-    #         for year, data in zip(years, data_list):
-    #             end_idx = start_idx + len(data)
-    #             self._data[year][model.__name__ + "_reduced"] = pd.DataFrame(pca_transformed_data[start_idx:end_idx], index=self._data[year][model.__name__].index)
-    #             start_idx = end_idx
-    
-    def pca_features(self, years, model, n_components=None, variance_min=None, plot_variance=False, chunk_size=1000):
+    def pca_features(self, years, model, n_components=None, variance_min=None, plot_variance=False):
         """Performs PCA on the features."""
 
         if n_components is None and variance_min is None:
@@ -548,26 +480,15 @@ class Eloisa:
             raise ValueError("Only one of n_components or variance_min can be provided.")
 
         if isinstance(years, int):
-            years = [years]  # Convert to list for uniform handling
 
-        if isinstance(years, list):
-            pca = IncrementalPCA(n_components=n_components if n_components is not None else None)
+            if n_components is None:
 
-            # Accumulate all data
-            all_data = []
-            for year in years:
-                data = self._data[year][model.__name__ + "_reduced"]
-                all_data.append(data)
-            all_data = np.vstack(all_data)
+                pca = PCA(random_state=self._seed)
+                pca.fit(self._data[years][model.__name__ + "_reduced"])
 
-            # Fit IncrementalPCA on the accumulated data in chunks
-            for i in range(0, len(all_data), chunk_size):
-                pca.partial_fit(all_data[i:i + chunk_size])
+                # If you want to retain variance_min% of the variance
+                cumulative_explained_variance = np.cumsum(pca.explained_variance_ratio_)
 
-            # Compute cumulative explained variance
-            cumulative_explained_variance = np.cumsum(pca.explained_variance_ratio_)
-
-            if variance_min is not None:
                 if plot_variance:
                     plt.figure(figsize=(10, 6))
                     plt.plot(range(1, len(cumulative_explained_variance) + 1), cumulative_explained_variance, marker='o', linestyle='--')
@@ -580,27 +501,108 @@ class Eloisa:
                 n_components = np.argmax(cumulative_explained_variance >= variance_min) + 1
                 print(f'Number of components to retain {variance_min * 100}% variance: {n_components}')
 
-                # Reinitialize IncrementalPCA with determined n_components
-                pca = IncrementalPCA(n_components=n_components)
-                for i in range(0, len(all_data), chunk_size):
-                    pca.partial_fit(all_data[i:i + chunk_size])
+            pca = PCA(n_components=n_components, random_state=self._seed)
+            pca.fit(self._data[years][model.__name__])
+            self._data[years][model.__name__ + "_reduced"] = pd.DataFrame(pca.transform(self._data[years][model.__name__ + "_reduced"]), index=self._data[years][model.__name__].index)
 
-            # Transform data for each year incrementally
-            for year in years:
-                data = self._data[year][model.__name__ + "_reduced"]
-                transformed_data = []
-                for i in range(0, len(data), chunk_size):
-                    chunk = data[i:i + chunk_size]
-                    transformed_data.append(pca.transform(chunk))
+        elif isinstance(years, list):
 
-                transformed_data = np.vstack(transformed_data)
-                self._data[year][model.__name__ + "_reduced"] = pd.DataFrame(transformed_data, index=data.index)
+            # Collect and concatenate numpy arrays from all specified years
+            data_list = [self._data[year][model.__name__ + "_reduced"] for year in years]
+            concatenated_data = np.vstack(data_list)
+            
+            if n_components is None:
+                pca = PCA(random_state=self._seed)
+                pca.fit(concatenated_data)
+                
+                # If you want to retain variance_min% of the variance
+                cumulative_explained_variance = np.cumsum(pca.explained_variance_ratio_)
+                
+                if plot_variance:
+                    plt.figure(figsize=(10, 6))
+                    plt.plot(range(1, len(cumulative_explained_variance) + 1), cumulative_explained_variance, marker='o', linestyle='--')
+                    plt.xlabel('Number of Components')
+                    plt.ylabel('Cumulative Explained Variance')
+                    plt.title('Explained Variance vs. Number of Components')
+                    plt.grid(True)
+                    plt.show()
+                
+                n_components = np.argmax(cumulative_explained_variance >= variance_min) + 1
+                print(f'Number of components to retain {variance_min * 100}% variance: {n_components}')
+            
+            # Perform PCA with the determined number of components
+            pca = PCA(n_components=n_components, random_state=self._seed)
+            pca_transformed_data = pca.fit_transform(concatenated_data)
+            
+            # Split the PCA-transformed data back into their respective years and convert to DataFrames
+            start_idx = 0
+            for year, data in zip(years, data_list):
+                end_idx = start_idx + len(data)
+                self._data[year][model.__name__ + "_reduced"] = pd.DataFrame(pca_transformed_data[start_idx:end_idx], index=self._data[year][model.__name__].index)
+                start_idx = end_idx
+    
+    # def pca_features(self, years, model, n_components=None, variance_min=None, plot_variance=False, chunk_size=1000):
+    #     """Performs PCA on the features."""
 
-        else:
-            raise ValueError("Year must be an integer or a list of integers.")
+    #     if n_components is None and variance_min is None:
+    #         raise ValueError("Either n_components or variance_min must be provided.")
+    #     if n_components is not None and variance_min is not None:
+    #         raise ValueError("Only one of n_components or variance_min can be provided.")
+
+    #     if isinstance(years, int):
+    #         years = [years]  # Convert to list for uniform handling
+
+    #     if isinstance(years, list):
+    #         pca = IncrementalPCA(n_components=n_components if n_components is not None else None)
+
+    #         # Accumulate all data
+    #         all_data = []
+    #         for year in years:
+    #             data = self._data[year][model.__name__ + "_reduced"]
+    #             all_data.append(data)
+    #         all_data = np.vstack(all_data)
+
+    #         # Fit IncrementalPCA on the accumulated data in chunks
+    #         for i in range(0, len(all_data), chunk_size):
+    #             pca.partial_fit(all_data[i:i + chunk_size])
+
+    #         # Compute cumulative explained variance
+    #         cumulative_explained_variance = np.cumsum(pca.explained_variance_ratio_)
+
+    #         if variance_min is not None:
+    #             if plot_variance:
+    #                 plt.figure(figsize=(10, 6))
+    #                 plt.plot(range(1, len(cumulative_explained_variance) + 1), cumulative_explained_variance, marker='o', linestyle='--')
+    #                 plt.xlabel('Number of Components')
+    #                 plt.ylabel('Cumulative Explained Variance')
+    #                 plt.title('Explained Variance vs. Number of Components')
+    #                 plt.grid(True)
+    #                 plt.show()
+
+    #             n_components = np.argmax(cumulative_explained_variance >= variance_min) + 1
+    #             print(f'Number of components to retain {variance_min * 100}% variance: {n_components}')
+
+    #             # Reinitialize IncrementalPCA with determined n_components
+    #             pca = IncrementalPCA(n_components=n_components)
+    #             for i in range(0, len(all_data), chunk_size):
+    #                 pca.partial_fit(all_data[i:i + chunk_size])
+
+    #         # Transform data for each year incrementally
+    #         for year in years:
+    #             data = self._data[year][model.__name__ + "_reduced"]
+    #             transformed_data = []
+    #             for i in range(0, len(data), chunk_size):
+    #                 chunk = data[i:i + chunk_size]
+    #                 transformed_data.append(pca.transform(chunk))
+
+    #             transformed_data = np.vstack(transformed_data)
+    #             self._data[year][model.__name__ + "_reduced"] = pd.DataFrame(transformed_data, index=data.index)
+
+    #     else:
+    #         raise ValueError("Year must be an integer or a list of integers.")
 
 
-    def calc_silhouette_score(self, years, model, kmax=100, show_plot=True):
+    def calc_silhouette_score(self, years, model, kmin=10, kmax=100, increment=10, show_plot=True):
         """Calculates the silhouette score for different numbers of clusters."""
 
         # Collect data from all specified years
@@ -611,7 +613,7 @@ class Eloisa:
 
         distorsions = []
 
-        for k in range(2, kmax + 1):
+        for k in tqdm(range(kmin, kmax + 1, increment), desc="Calculating silhouette scores"):
             kmeans = KMeans(n_clusters=k, random_state=self._seed).fit(concatenated_data)
             labels = kmeans.labels_
             sil.append(silhouette_score(concatenated_data, labels, metric='euclidean'))
@@ -621,7 +623,7 @@ class Eloisa:
         if show_plot:
             # Plot silhouette score
             plt.figure(figsize=(10, 6))
-            plt.plot(range(2, kmax + 1), sil, marker='o')
+            plt.plot(range(kmin, kmax + 1, increment), sil, marker='o')
             plt.xlabel('Number of Clusters')
             plt.ylabel('Silhouette Score')
             plt.title('Silhouette Score vs. Number of Clusters')
@@ -670,8 +672,109 @@ class Eloisa:
             self._data[year][model.__name__ + "_cluster"] = kmeans_labels[start_idx:end_idx]
             start_idx = end_idx
 
+        return kmeans
+    
+    # def subspace_clustering(self, years, model, n_clusters, algorithm="lasso_lars", gamma=50, n_jobs=-1):
+    #     """Performs subspace clustering on the features using ElasticNet."""
+    #     # Collect data from all specified years
+    #     data_list = [self._data[year][model.__name__ + "_reduced"] for year in years]
+    #     concatenated_data = pd.concat(data_list, axis=0)
+
+    #     # Sample a subset of the data
+    #     sampled_data = concatenated_data.sample(frac=sample_fraction, random_state=self._seed)
+
+    #     # Perform subspace clustering
+    #     sc = ElasticNetSubspaceClustering(n_clusters=n_clusters, gamma=gamma, n_jobs=n_jobs, algorithm=algorithm)
+    #     sc.fit(sampled_data)
+    #     cluster_labels = sc.labels_
+
+    #     # Split the cluster labels back into their respective years
+    #     start_idx = 0
+    #     for year in years:
+    #         end_idx = start_idx + len(self._data[year][model.__name__ + "_reduced"])
+    #         self._data[year][model.__name__ + "_cluster"] = cluster_labels[start_idx:end_idx]
+    #         start_idx = end_idx
+
+    #     return sc
+
+    def subspace_clustering(self, years, model, n_clusters, algorithm="lasso_lars", gamma=50, n_jobs=-1, sample_fraction=0.1):
+        """Performs subspace clustering on a subset of the features using ElasticNet and applies the results to the rest."""
+        # Collect data from all specified years
+        data_list = [self._data[year][model.__name__ + "_reduced"] for year in years]
+        concatenated_data = pd.concat(data_list, axis=0)
+
+        # Sample a subset of the data
+        sampled_data = concatenated_data.sample(frac=sample_fraction, random_state=self._seed)
+
+        # Perform subspace clustering on the sampled data
+        sc = ElasticNetSubspaceClustering(n_clusters=n_clusters, gamma=gamma, n_jobs=n_jobs, algorithm=algorithm)
+        sc.fit(sampled_data)
+        sampled_labels = sc.labels_
+
+        # Train a classifier on the sampled data to predict cluster labels
+        classifier = RandomForestClassifier(random_state=self._seed)
+        classifier.fit(sampled_data, sampled_labels)
+
+        # Predict cluster labels for the entire dataset
+        cluster_labels = classifier.predict(concatenated_data)
+
+        # Split the cluster labels back into their respective years
+        start_idx = 0
+        for year in years:
+            end_idx = start_idx + len(self._data[year][model.__name__ + "_reduced"])
+            self._data[year][model.__name__ + "_cluster"] = cluster_labels[start_idx:end_idx]
+            start_idx = end_idx
+
+        return sc
+    
+    def calc_clusters(self, years, model, algorithm='kmeans', **kwargs):
+        """Calculates clusters for the features using the specified algorithm."""
+
+        # Collect data from all specified years
+        data_list = [self._data[year][model.__name__ + "_reduced"] for year in years]
+        concatenated_data = pd.concat(data_list, axis=0)
+
+        if algorithm == 'kmeans':
+            n_clusters = kwargs.get('n_clusters', 8)
+            clusterer = KMeans(n_clusters=n_clusters, random_state=self._seed)
+        elif algorithm == 'optics':
+            min_samples = kwargs.get('min_samples', 5)
+            max_eps = kwargs.get('max_eps', float('inf'))
+            n_jobs = kwargs.get('n_jobs', -1)
+            clusterer = OPTICS(min_samples=min_samples, max_eps=max_eps, n_jobs=n_jobs)
+        elif algorithm == 'dbscan':
+            eps = kwargs.get('eps', 0.5)
+            min_samples = kwargs.get('min_samples', 5)
+            n_jobs = kwargs.get('n_jobs', -1)
+            clusterer = DBSCAN(eps=eps, min_samples=min_samples, n_jobs=n_jobs)
+        else:
+            raise ValueError(f"Unsupported algorithm: {algorithm}")
+
+        cluster_labels = clusterer.fit_predict(concatenated_data)
+
+        # Split the cluster labels back into their respective years
+        start_idx = 0
+        for year in years:
+            end_idx = start_idx + len(self._data[year][model.__name__ + "_reduced"])
+            self._data[year][model.__name__ + "_cluster"] = cluster_labels[start_idx:end_idx]
+            start_idx = end_idx
+
+        return clusterer
+
     def plot_cluster_counts(self, years, model):
         """Plots the counts of each cluster for all years."""
+        cluster_counts = self.get_cluster_counts(years, model)
+
+        # Plot cluster distribution
+        plt.figure(figsize=(12, 6))
+        plt.bar(cluster_counts.keys(), cluster_counts.values())
+        plt.xlabel("Cluster Number")
+        plt.ylabel("Number of Images")
+        plt.title("Cluster Distribution")
+        plt.show()
+
+    def get_cluster_counts(self, years, model):
+        """Returns the counts of each cluster for all years."""
         cluster_counts = {}
         for year in years:
 
@@ -681,13 +784,7 @@ class Eloisa:
                 else:
                     cluster_counts[k] = v
 
-        # Plot cluster distribution
-        plt.figure(figsize=(12, 6))
-        plt.bar(cluster_counts.keys(), cluster_counts.values())
-        plt.xlabel("Cluster Number")
-        plt.ylabel("Number of Images")
-        plt.title("Cluster Distribution")
-        plt.show()
+        return cluster_counts
 
     def get_cluster_location_info(self, year, model, subgeometries, dissolve_by_cluster=False):
         """Returns information about all image clips stored in the Eloisa object."""

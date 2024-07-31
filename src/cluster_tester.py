@@ -6,10 +6,13 @@ import matplotlib.colors as mcolors
 import geopandas as gpd
 import pandas as pd
 import numpy as np
+import folium
+from folium import IFrame, FeatureGroup
 
 from tqdm import tqdm
 
 from itertools import combinations
+from shapely.geometry import mapping
 
 # Import precision_score and recall_score from sklearn.metrics
 from sklearn.metrics import precision_score, recall_score
@@ -20,20 +23,19 @@ from analysis_image import AnalysisImage
 class ClusterTester:
     """ Class used to test clustering results from ELOISA object. """
 
-    def __init__(self, cluster_location_info, analysis_image, validation_data):
-        """.git\
-
+    def __init__(self, cluster_location_info, analysis_image, validation_data, cluster_order=None, num_clusters=None, palette="viridis"):
+        """
         Args:
             cluster_location_info (dict): Used get_cluster_location_info() method from ELOISA object.
             analysis_image (AnalysisImage): An AnalysisImage object of the area of interest.
             validation_data (gdp.Geodataframe): A geodataframe with validation data (for example, ground truth slum area data).
-        
-        
+            cluster_order (dict, optional): A dictionary specifying the relative positions of clusters for color mapping.
         """
         
         self.cluster_location_info = cluster_location_info
         self.analysis_image = analysis_image
         self.validation_data = validation_data
+        self.cluster_order = cluster_order
 
         self.sampling_points = None
         self.cluster_metrics = None
@@ -41,38 +43,125 @@ class ClusterTester:
 
         self.points_pivot = pd.DataFrame()
 
-        # Generate a colormap with x distinct colors
-        num_clusters = len(self.cluster_location_info['cluster'].unique())
-        cmap = plt.get_cmap('tab20')  # You can choose other colormaps like 'tab20', 'tab20c', etc.
-        colors = cmap(np.linspace(0, 1, num_clusters))
+        # Generate a colormap with distinct colors
+        if num_clusters is None:
+            num_clusters = len(self.cluster_location_info['cluster'].unique())
 
-        # Create a dictionary mapping each cluster number to a color
-        self.colormap = {i + 1: mcolors.rgb2hex(colors[i]) for i in range(num_clusters)}
+        cmap = plt.get_cmap(palette)  # Choose an appropriate colormap
+
+        if self.cluster_order is not None:
+            
+            # Remove any values outside +/- 2 standard deviations from the mean
+            cluster_order_values = list(self.cluster_order.values())
+            mean = np.mean(cluster_order_values)
+            std = np.std(cluster_order_values)
+            cluster_order_values = [value for value in cluster_order_values if value >= mean - 2 * std and value <= mean + 2 * std]
+
+            # Reassign the cluster order values to the filtered values
+            self.cluster_order = {k: v for k, v in self.cluster_order.items() if v in cluster_order_values}
+
+
+            # Normalize the values to be in the range [0, 1]
+            min_value = min(self.cluster_order.values())
+            max_value = max(self.cluster_order.values())
+            normalized_order = {k: (v - min_value) / (max_value - min_value) for k, v in sorted(self.cluster_order.items())}
+
+            # Create a colormap mapping each cluster number to a color based on normalized values
+            self.colormap = {cluster: mcolors.rgb2hex(cmap(normalized_order[cluster])) for cluster in normalized_order}
+        else:
+            colors = cmap(np.linspace(0, 1, num_clusters))
+            self.colormap = {i + 1: mcolors.rgb2hex(colors[i]) for i in range(num_clusters)}
     
     def plot_clusters(self, sampling_points=None, show_clusters=True, show_image=True, show_validation_data=True, zoom=13):
-        """Plot clusters, image and validation data."""
+        """Plot clusters, image, and validation data."""
 
-        visualization = {
-            'min': 0.0,
-            'max': 0.3,
-            'bands': ['B4', 'B3', 'B2'],
-        }
+        m = folium.Map(location=self.analysis_image.center, zoom_start=zoom, tiles=None)  # Initialize map without default tiles
 
-        m = geemap.Map()
-        m.set_center(self.analysis_image.center[1], self.analysis_image.center[0], zoom)
+        # Add satellite and other base layers
+        folium.TileLayer('OpenStreetMap').add_to(m)
+        folium.TileLayer(
+            tiles='https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
+            attr='Google',
+            name='Google Satellite',
+            overlay=False,
+            control=True,
+            subdomains=['mt0', 'mt1', 'mt2', 'mt3']
+        ).add_to(m)
 
-        if show_image:
-            m.add_layer(self.analysis_image.sd_cutout, visualization, 'RGB')
+        cluster_layer = FeatureGroup(name='Clusters', control=False)
+        validation_layer = FeatureGroup(name='Validation Data', control=False)
+        sampling_layer = FeatureGroup(name='Sampling Points', control=False)
 
         if show_clusters:
-            m.add_gdf(self.cluster_location_info, layer_name='Clusters', fill_colors=list(self.colormap.values()), style={'fillOpacity': 0.75, 'opacity': 0},
-                hover_style={'fillOpacity': 0.25, 'opacity': 1})
+            for _, row in self.cluster_location_info.iterrows():
+                cluster_id = row['cluster']
+                color = self.colormap.get(cluster_id, '#000000')  # Default to black if cluster_id not found
+                folium.GeoJson(
+                    mapping(row['geometry']),
+                    style_function=lambda feature, color=color: {
+                        'fillColor': color,
+                        'color': color,
+                        'weight': 0,
+                        'fillOpacity': 0.75,
+                    },
+                    tooltip=folium.Tooltip(f'Cluster: {cluster_id}')
+                ).add_to(cluster_layer)
+            cluster_layer.add_to(m)
 
         if show_validation_data:
-            m.add_gdf(self.validation_data, layer_name='Validation Data', fill_colors='red', style={'fillOpacity': 0.75, 'opacity': 0})
+            folium.GeoJson(
+                self.validation_data,
+                style_function=lambda feature: {
+                    'fillColor': 'red',
+                    'color': 'red',
+                    'weight': 0,
+                    'fillOpacity': 0.75,
+                }
+            ).add_to(validation_layer)
+            validation_layer.add_to(m)
 
         if sampling_points is not None:
-            m.add_gdf(sampling_points, layer_name='Sampling Points', fill_colors='blue', style={'fillOpacity': 0.75, 'opacity': 0})
+            folium.GeoJson(
+                sampling_points,
+                style_function=lambda feature: {
+                    'fillColor': 'blue',
+                    'color': 'blue',
+                    'weight': 0,
+                    'fillOpacity': 0.75,
+                }
+            ).add_to(sampling_layer)
+            sampling_layer.add_to(m)
+
+        folium.LayerControl().add_to(m)
+
+        # JavaScript for opacity control
+        opacity_control = '''
+        <div style="position: fixed; bottom: 50px; left: 10px; z-index: 9999; background-color: white; padding: 10px; border-radius: 5px;">
+            <h4>Layer Opacity</h4>
+            <label for="cluster_opacity">Clusters</label>
+            <input type="range" id="cluster_opacity" min="0" max="1" step="0.1" value="0.75" onchange="setOpacity('Clusters', this.value)">
+            <br>
+            <label for="validation_opacity">Validation Data</label>
+            <input type="range" id="validation_opacity" min="0" max="1" step="0.1" value="0.75" onchange="setOpacity('Validation Data', this.value)">
+            <br>
+            <label for="sampling_opacity">Sampling Points</label>
+            <input type="range" id="sampling_opacity" min="0" max="1" step="0.1" value="0.75" onchange="setOpacity('Sampling Points', this.value)">
+        </div>
+        <script>
+        function setOpacity(layerName, opacity) {
+            var layers = window.LayersControl.layers;
+            for (var i = 0; i < layers.length; i++) {
+                if (layers[i].name === layerName) {
+                    layers[i].layer.eachLayer(function(layer) {
+                        layer.setStyle({fillOpacity: opacity, opacity: opacity});
+                    });
+                }
+            }
+        }
+        </script>
+        '''
+
+        m.get_root().html.add_child(folium.Element(opacity_control))
 
         return m
 
