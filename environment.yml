@@ -22,5 +22,5 @@ dependencies:
   - pip # pip=23.4.0 23.3.1
   - pip:
       - tensorflow==2.16.1
-      - pysam==0.22.1 # Not sure if this is the right version
-      - git+https://github.com/jacobkrantz/Simple-HOHMM.git#egg=simple-hohmm
+      - pysan==0.22.1 # Not sure if this is the right version
+      - git+https://github.com/jacobkrantz/Simple-HOHMM.git#egg=simplehohmm
