@@ -7,7 +7,6 @@ import geopandas as gpd
 import pandas as pd
 import numpy as np
 import folium
-from folium import IFrame, FeatureGroup
 
 from tqdm import tqdm
 
@@ -75,9 +74,9 @@ class ClusterTester:
     def plot_clusters(self, sampling_points=None, show_clusters=True, show_image=True, show_validation_data=True, zoom=13):
         """Plot clusters, image, and validation data."""
 
-        m = folium.Map(location=self.analysis_image.center, zoom_start=zoom, tiles=None)  # Initialize map without default tiles
+        m = folium.Map(location=self.analysis_image.center, zoom_start=zoom)
 
-        # Add satellite and other base layers
+                # Add satellite and other base layers
         folium.TileLayer('OpenStreetMap').add_to(m)
         folium.TileLayer(
             tiles='https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
@@ -88,11 +87,8 @@ class ClusterTester:
             subdomains=['mt0', 'mt1', 'mt2', 'mt3']
         ).add_to(m)
 
-        cluster_layer = FeatureGroup(name='Clusters', control=False)
-        validation_layer = FeatureGroup(name='Validation Data', control=False)
-        sampling_layer = FeatureGroup(name='Sampling Points', control=False)
-
         if show_clusters:
+            cluster_layer = folium.FeatureGroup(name='Clusters')
             for _, row in self.cluster_location_info.iterrows():
                 cluster_id = row['cluster']
                 color = self.colormap.get(cluster_id, '#000000')  # Default to black if cluster_id not found
@@ -102,25 +98,27 @@ class ClusterTester:
                         'fillColor': color,
                         'color': color,
                         'weight': 0,
-                        'fillOpacity': 0.75,
+                        'fillOpacity': 0.6,
                     },
                     tooltip=folium.Tooltip(f'Cluster: {cluster_id}')
                 ).add_to(cluster_layer)
             cluster_layer.add_to(m)
 
         if show_validation_data:
+            validation_layer = folium.FeatureGroup(name='Validation Data')
             folium.GeoJson(
                 self.validation_data,
                 style_function=lambda feature: {
-                    'fillColor': 'red',
-                    'color': 'red',
+                    'fillColor': 'black',
+                    'color': 'black',
                     'weight': 0,
-                    'fillOpacity': 0.75,
+                    'fillOpacity': 0.6,
                 }
             ).add_to(validation_layer)
             validation_layer.add_to(m)
 
         if sampling_points is not None:
+            sampling_layer = folium.FeatureGroup(name='Sampling Points')
             folium.GeoJson(
                 sampling_points,
                 style_function=lambda feature: {
@@ -134,44 +132,20 @@ class ClusterTester:
 
         folium.LayerControl().add_to(m)
 
-        # JavaScript for opacity control
-        opacity_control = '''
-        <div style="position: fixed; bottom: 50px; left: 10px; z-index: 9999; background-color: white; padding: 10px; border-radius: 5px;">
-            <h4>Layer Opacity</h4>
-            <label for="cluster_opacity">Clusters</label>
-            <input type="range" id="cluster_opacity" min="0" max="1" step="0.1" value="0.75" onchange="setOpacity('Clusters', this.value)">
-            <br>
-            <label for="validation_opacity">Validation Data</label>
-            <input type="range" id="validation_opacity" min="0" max="1" step="0.1" value="0.75" onchange="setOpacity('Validation Data', this.value)">
-            <br>
-            <label for="sampling_opacity">Sampling Points</label>
-            <input type="range" id="sampling_opacity" min="0" max="1" step="0.1" value="0.75" onchange="setOpacity('Sampling Points', this.value)">
-        </div>
-        <script>
-        function setOpacity(layerName, opacity) {
-            var layers = window.LayersControl.layers;
-            for (var i = 0; i < layers.length; i++) {
-                if (layers[i].name === layerName) {
-                    layers[i].layer.eachLayer(function(layer) {
-                        layer.setStyle({fillOpacity: opacity, opacity: opacity});
-                    });
-                }
-            }
-        }
-        </script>
-        '''
-
-        m.get_root().html.add_child(folium.Element(opacity_control))
-
         return m
 
-    def create_sampling_points(self, n_points):
+    def create_sampling_points(self, n_points=None, points=None):
         """Create points for random sampling"""
 
-        # Create a set of sample points within the area of interest
-        x = np.random.uniform(self.analysis_image.left, self.analysis_image.right, n_points)
-        y = np.random.uniform(self.analysis_image.bottom, self.analysis_image.top, n_points)
-        points = gpd.GeoDataFrame(geometry=gpd.points_from_xy(x, y), crs='EPSG:4326')
+        if points is not None and n_points is None:
+            points = points.to_crs('EPSG:4326')
+        elif n_points is not None and points is None:
+            # Create a set of sample points within the area of interest
+            x = np.random.uniform(self.analysis_image.left, self.analysis_image.right, n_points)
+            y = np.random.uniform(self.analysis_image.bottom, self.analysis_image.top, n_points)
+            points = gpd.GeoDataFrame(geometry=gpd.points_from_xy(x, y), crs='EPSG:4326')
+        else:
+            raise ValueError("Either n_points or points must be provided, but not both.")
 
         # Assign the cluster number to each point based on the cluster it falls within
         points['cluster'] = points.apply(lambda x: next((index for index, row in self.cluster_location_info.iterrows() if row.geometry.contains(x.geometry)), np.nan), axis=1)
