@@ -784,9 +784,9 @@ class Eloisa:
         """Returns information about all image clips stored in the Eloisa object."""
         cluster_location_info = pd.DataFrame()
 
-        cluster_location_info["path"] = self.image_names[2018]
+        cluster_location_info["path"] = self.image_names[year]
         cluster_location_info["image_num"] = cluster_location_info["path"].str.extract(r"(\d+)\.tif")
-        cluster_location_info["cluster"] = self._data[2018][model.__name__ + "_cluster"]
+        cluster_location_info["cluster"] = self._data[year][model.__name__ + "_cluster"]
 
         for i, subgeometry in enumerate(subgeometries):
             cluster_location_info.loc[cluster_location_info["image_num"] == str(i), "geometry"] = subgeometry

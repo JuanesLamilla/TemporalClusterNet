@@ -21,62 +21,58 @@ from analysis_image import AnalysisImage
 
 class ClusterTester:
     """ Class used to test clustering results from ELOISA object. """
-
     def __init__(self, cluster_location_info, analysis_image, validation_data, cluster_order=None, num_clusters=None, palette="viridis"):
         """
         Args:
             cluster_location_info (dict): Used get_cluster_location_info() method from ELOISA object.
             analysis_image (AnalysisImage): An AnalysisImage object of the area of interest.
             validation_data (gdp.Geodataframe): A geodataframe with validation data (for example, ground truth slum area data).
-            cluster_order (dict, optional): A dictionary specifying the relative positions of clusters for color mapping.
+            cluster_order (dict or list of lists, optional): A dictionary specifying the relative positions of clusters for color mapping or a list of lists for group coloring.
         """
         
         self.cluster_location_info = cluster_location_info
         self.analysis_image = analysis_image
         self.validation_data = validation_data
         self.cluster_order = cluster_order
-
         self.sampling_points = None
         self.cluster_metrics = None
         self.combination_metrics = None
-
         self.points_pivot = pd.DataFrame()
-
         # Generate a colormap with distinct colors
         if num_clusters is None:
             num_clusters = len(self.cluster_location_info['cluster'].unique())
-
         cmap = plt.get_cmap(palette)  # Choose an appropriate colormap
 
-        if self.cluster_order is not None:
-            
+        if isinstance(self.cluster_order, dict):
             # Remove any values outside +/- 2 standard deviations from the mean
             cluster_order_values = list(self.cluster_order.values())
             mean = np.mean(cluster_order_values)
             std = np.std(cluster_order_values)
             cluster_order_values = [value for value in cluster_order_values if value >= mean - 2 * std and value <= mean + 2 * std]
-
+            
             # Reassign the cluster order values to the filtered values
             self.cluster_order = {k: v for k, v in self.cluster_order.items() if v in cluster_order_values}
-
-
             # Normalize the values to be in the range [0, 1]
             min_value = min(self.cluster_order.values())
             max_value = max(self.cluster_order.values())
             normalized_order = {k: (v - min_value) / (max_value - min_value) for k, v in sorted(self.cluster_order.items())}
-
             # Create a colormap mapping each cluster number to a color based on normalized values
             self.colormap = {cluster: mcolors.rgb2hex(cmap(normalized_order[cluster])) for cluster in normalized_order}
+        elif isinstance(self.cluster_order, list):
+            colors = cmap(np.linspace(0, 1, len(self.cluster_order)))
+            self.colormap = {}
+            for i, cluster_list in enumerate(self.cluster_order):
+                color = mcolors.rgb2hex(colors[i])
+                for cluster in cluster_list:
+                    self.colormap[cluster] = color
         else:
             colors = cmap(np.linspace(0, 1, num_clusters))
             self.colormap = {i + 1: mcolors.rgb2hex(colors[i]) for i in range(num_clusters)}
-    
+
     def plot_clusters(self, sampling_points=None, show_clusters=True, show_image=True, show_validation_data=True, zoom=13):
         """Plot clusters, image, and validation data."""
-
         m = folium.Map(location=self.analysis_image.center, zoom_start=zoom)
-
-                # Add satellite and other base layers
+        # Add satellite and other base layers
         folium.TileLayer('OpenStreetMap').add_to(m)
         folium.TileLayer(
             tiles='https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
@@ -86,7 +82,6 @@ class ClusterTester:
             control=True,
             subdomains=['mt0', 'mt1', 'mt2', 'mt3']
         ).add_to(m)
-
         if show_clusters:
             cluster_layer = folium.FeatureGroup(name='Clusters')
             for _, row in self.cluster_location_info.iterrows():
@@ -103,7 +98,6 @@ class ClusterTester:
                     tooltip=folium.Tooltip(f'Cluster: {cluster_id}')
                 ).add_to(cluster_layer)
             cluster_layer.add_to(m)
-
         if show_validation_data:
             validation_layer = folium.FeatureGroup(name='Validation Data')
             folium.GeoJson(
@@ -116,7 +110,6 @@ class ClusterTester:
                 }
             ).add_to(validation_layer)
             validation_layer.add_to(m)
-
         if sampling_points is not None:
             sampling_layer = folium.FeatureGroup(name='Sampling Points')
             folium.GeoJson(
@@ -129,9 +122,7 @@ class ClusterTester:
                 }
             ).add_to(sampling_layer)
             sampling_layer.add_to(m)
-
         folium.LayerControl().add_to(m)
-
         return m
 
     def create_sampling_points(self, n_points=None, points=None):

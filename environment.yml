@@ -19,7 +19,8 @@ dependencies:
   - xgboost=2.0.3
   - progressbar2=4.4.2 # Not sure if this is the right version
   - spams-bin=2.6.10 # Not sure if this is the right version
-  - pomegranate=1.0.0 # Not sure if this is the right version
+  - networkx=3.1 # Not sure if this is the right version
+  # - pomegranate=1.0.0 # Not sure if this is the right version
   - pip # pip=23.4.0 23.3.1
   - pip:
       - tensorflow==2.16.1
