@@ -7,6 +7,7 @@ import geopandas as gpd
 import pandas as pd
 import numpy as np
 import folium
+import branca
 
 from tqdm import tqdm
 
@@ -72,6 +73,7 @@ class ClusterTester:
     def plot_clusters(self, sampling_points=None, show_clusters=True, show_image=True, show_validation_data=True, zoom=13):
         """Plot clusters, image, and validation data."""
         m = folium.Map(location=self.analysis_image.center, zoom_start=zoom)
+        
         # Add satellite and other base layers
         folium.TileLayer('OpenStreetMap').add_to(m)
         folium.TileLayer(
@@ -82,6 +84,7 @@ class ClusterTester:
             control=True,
             subdomains=['mt0', 'mt1', 'mt2', 'mt3']
         ).add_to(m)
+        
         if show_clusters:
             cluster_layer = folium.FeatureGroup(name='Clusters')
             for _, row in self.cluster_location_info.iterrows():
@@ -98,6 +101,7 @@ class ClusterTester:
                     tooltip=folium.Tooltip(f'Cluster: {cluster_id}')
                 ).add_to(cluster_layer)
             cluster_layer.add_to(m)
+        
         if show_validation_data:
             validation_layer = folium.FeatureGroup(name='Validation Data')
             folium.GeoJson(
@@ -110,6 +114,7 @@ class ClusterTester:
                 }
             ).add_to(validation_layer)
             validation_layer.add_to(m)
+        
         if sampling_points is not None:
             sampling_layer = folium.FeatureGroup(name='Sampling Points')
             folium.GeoJson(
@@ -122,7 +127,25 @@ class ClusterTester:
                 }
             ).add_to(sampling_layer)
             sampling_layer.add_to(m)
+        
+        # Create a legend
+        legend_html = '''
+        <div style="position: fixed; 
+                    bottom: 50px; left: 50px; width: 150px; height: auto; 
+                    border:2px solid grey; z-index:9999; font-size:14px;
+                    background-color:white; opacity: 0.8;">
+        <h4> Legend</h4>
+        '''
+        
+        for cluster_id, color in self.colormap.items():
+            legend_html += f'<i style="background:{color};width:10px;height:10px;display:inline-block;"></i> Cluster {cluster_id}<br>'
+        
+        legend_html += '</div>'
+        
+        m.get_root().html.add_child(folium.Element(legend_html))
+        
         folium.LayerControl().add_to(m)
+        
         return m
 
     def create_sampling_points(self, n_points=None, points=None):

@@ -16,13 +16,17 @@ dependencies:
   - seaborn=0.12.2
   - scikit-learn=1.3.0
   - shapely=2.0.3
-  - xgboost=2.0.3
+  - pysal=2.1.0
+  - splot=1.1.6
+  # - xgboost=2.0.3 # Need to use pip to use GPU
   - progressbar2=4.4.2 # Not sure if this is the right version
   - spams-bin=2.6.10 # Not sure if this is the right version
   - networkx=3.1 # Not sure if this is the right version
+  - scikit-optimize=0.10.2
   # - pomegranate=1.0.0 # Not sure if this is the right version
   - pip # pip=23.4.0 23.3.1
   - pip:
       - tensorflow==2.16.1
       - pysan==0.22.1 # Not sure if this is the right version
+      - xgboost==2.1.1
       - git+https://github.com/jacobkrantz/Simple-HOHMM.git#egg=simplehohmm
