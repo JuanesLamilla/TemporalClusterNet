@@ -22,7 +22,7 @@ from analysis_image import AnalysisImage
 
 class ClusterTester:
     """ Class used to test clustering results from ELOISA object. """
-    def __init__(self, cluster_location_info, analysis_image, validation_data, cluster_order=None, num_clusters=None, palette="viridis"):
+    def __init__(self, cluster_location_info, analysis_image, validation_data, cluster_order=None, num_clusters=None, palette="viridis", colormap=None):
         """
         Args:
             cluster_location_info (dict): Used get_cluster_location_info() method from ELOISA object.
@@ -44,31 +44,38 @@ class ClusterTester:
             num_clusters = len(self.cluster_location_info['cluster'].unique())
         cmap = plt.get_cmap(palette)  # Choose an appropriate colormap
 
-        if isinstance(self.cluster_order, dict):
-            # Remove any values outside +/- 2 standard deviations from the mean
-            cluster_order_values = list(self.cluster_order.values())
-            mean = np.mean(cluster_order_values)
-            std = np.std(cluster_order_values)
-            cluster_order_values = [value for value in cluster_order_values if value >= mean - 2 * std and value <= mean + 2 * std]
-            
-            # Reassign the cluster order values to the filtered values
-            self.cluster_order = {k: v for k, v in self.cluster_order.items() if v in cluster_order_values}
-            # Normalize the values to be in the range [0, 1]
-            min_value = min(self.cluster_order.values())
-            max_value = max(self.cluster_order.values())
-            normalized_order = {k: (v - min_value) / (max_value - min_value) for k, v in sorted(self.cluster_order.items())}
-            # Create a colormap mapping each cluster number to a color based on normalized values
-            self.colormap = {cluster: mcolors.rgb2hex(cmap(normalized_order[cluster])) for cluster in normalized_order}
-        elif isinstance(self.cluster_order, list):
-            colors = cmap(np.linspace(0, 1, len(self.cluster_order)))
-            self.colormap = {}
-            for i, cluster_list in enumerate(self.cluster_order):
-                color = mcolors.rgb2hex(colors[i])
-                for cluster in cluster_list:
-                    self.colormap[cluster] = color
+
+        if colormap is None:
+            if isinstance(self.cluster_order, dict):
+                # Remove any values outside +/- 2 standard deviations from the mean
+                cluster_order_values = list(self.cluster_order.values())
+                mean = np.mean(cluster_order_values)
+                std = np.std(cluster_order_values)
+                cluster_order_values = [value for value in cluster_order_values if value >= mean - 2 * std and value <= mean + 2 * std]
+                
+                # Reassign the cluster order values to the filtered values
+                self.cluster_order = {k: v for k, v in self.cluster_order.items() if v in cluster_order_values}
+                # Normalize the values to be in the range [0, 1]
+                min_value = min(self.cluster_order.values())
+                max_value = max(self.cluster_order.values())
+                normalized_order = {k: (v - min_value) / (max_value - min_value) for k, v in sorted(self.cluster_order.items())}
+                # Create a colormap mapping each cluster number to a color based on normalized values
+                self.colormap = {cluster: mcolors.rgb2hex(cmap(normalized_order[cluster])) for cluster in normalized_order}
+
+            elif isinstance(self.cluster_order, list):
+
+                colors = cmap(np.linspace(0, 1, len(self.cluster_order)))
+                self.colormap = {}
+                for i, cluster_list in enumerate(self.cluster_order):
+                    color = mcolors.rgb2hex(colors[i])
+                    for cluster in cluster_list:
+                        self.colormap[cluster] = color
+
+            else:
+                colors = cmap(np.linspace(0, 1, num_clusters))
+                self.colormap = {i + 1: mcolors.rgb2hex(colors[i]) for i in range(num_clusters)}
         else:
-            colors = cmap(np.linspace(0, 1, num_clusters))
-            self.colormap = {i + 1: mcolors.rgb2hex(colors[i]) for i in range(num_clusters)}
+            self.colormap = colormap
 
     def plot_clusters(self, sampling_points=None, show_clusters=True, show_image=True, show_validation_data=True, zoom=13):
         """Plot clusters, image, and validation data."""

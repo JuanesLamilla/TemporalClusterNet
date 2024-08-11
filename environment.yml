@@ -18,6 +18,7 @@ dependencies:
   - shapely=2.0.3
   - pysal=2.1.0
   - splot=1.1.6
+  - netgraph
   # - xgboost=2.0.3 # Need to use pip to use GPU
   - progressbar2=4.4.2 # Not sure if this is the right version
   - spams-bin=2.6.10 # Not sure if this is the right version
