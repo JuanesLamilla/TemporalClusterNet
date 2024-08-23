@@ -3,6 +3,7 @@ temporary
 temporary_tegucigalpa
 image_clips
 eloisa_databases
+data/cluster_polys
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

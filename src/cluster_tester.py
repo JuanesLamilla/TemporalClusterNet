@@ -77,7 +77,7 @@ class ClusterTester:
         else:
             self.colormap = colormap
 
-    def plot_clusters(self, sampling_points=None, show_clusters=True, show_image=True, show_validation_data=True, zoom=13):
+    def plot_clusters(self, sampling_points=None, show_clusters=True, show_image=True, show_validation_data=True, zoom=13, screenshot_mode=False):
         """Plot clusters, image, and validation data."""
         m = folium.Map(location=self.analysis_image.center, zoom_start=zoom)
         
@@ -94,9 +94,26 @@ class ClusterTester:
         
         if show_clusters:
             cluster_layer = folium.FeatureGroup(name='Clusters')
+
+            if screenshot_mode:
+                cluster_layer_screenshot = folium.FeatureGroup(name='Edges')
+
             for _, row in self.cluster_location_info.iterrows():
                 cluster_id = row['cluster']
                 color = self.colormap.get(cluster_id, '#000000')  # Default to black if cluster_id not found
+
+                if screenshot_mode:
+                    folium.GeoJson(
+                        mapping(row['geometry']),
+                        style_function=lambda feature, color=color: {
+                            'fillColor': color,
+                            'color': color,
+                            'weight': 1,
+                            'fillOpacity': 0,
+                            'stroke': True,
+                        }
+                    ).add_to(cluster_layer_screenshot)
+
                 folium.GeoJson(
                     mapping(row['geometry']),
                     style_function=lambda feature, color=color: {
@@ -107,7 +124,10 @@ class ClusterTester:
                     },
                     tooltip=folium.Tooltip(f'Cluster: {cluster_id}')
                 ).add_to(cluster_layer)
+                
+            cluster_layer_screenshot.add_to(m)
             cluster_layer.add_to(m)
+            
         
         if show_validation_data:
             validation_layer = folium.FeatureGroup(name='Validation Data')

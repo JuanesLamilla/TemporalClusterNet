@@ -181,7 +181,7 @@ class Eloisa:
 
         self._data[year]["image_list"] = image_list
 
-    def show_clip_by_year(self, years: list, index: int, model=None):
+    def show_clip_by_year(self, years: list, index: int, model=None, fontsize=12):
         """Displays the image clip for the specified years and index."""
 
         fig, axes = plt.subplots(1, len(years), figsize=(20, 10))
@@ -194,7 +194,7 @@ class Eloisa:
 
             if model is not None and self._data[years[i]][model.__name__ + "_cluster"] is not None:
 
-                ax.set_title(f"{years[i]} (Cluster: {self._data[years[i]][model.__name__ + "_cluster"][index]})")
+                ax.set_title(f"{years[i]} (Cluster: {self._data[years[i]][model.__name__ + "_cluster"][index]})", fontsize=fontsize)
 
             else:
                 ax.set_title(f"{years[i]}")

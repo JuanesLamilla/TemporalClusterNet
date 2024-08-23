@@ -158,7 +158,7 @@ class AnalysisImage:
         
         return [self.left, self.right, self.top, self.bottom]
 
-    def extract_clips_to_folder(self, folder_name, file_name, x_num_parts, y_num_parts, continue_preexisting=False):
+    def extract_clips_to_folder(self, folder_name, file_name, x_num_parts, y_num_parts, img_scale, continue_preexisting=False):
         """Extracts the image clips to a folder."""
 
         # Create a directory for temporary files if it doesn't exist
@@ -188,7 +188,7 @@ class AnalysisImage:
                 geojson_geometry = json.dumps(mapping(subgeometry))
 
                 with HiddenPrints():
-                    geemap.ee_export_image(self.sd_cutout, filename=output_filename, region=geojson_geometry, scale=1)
+                    geemap.ee_export_image(self.sd_cutout, filename=output_filename, region=geojson_geometry, scale=img_scale)
 
                 new_row = pd.DataFrame([{"file_name": output_filename, "x": subgeometry.centroid.x, "y": subgeometry.centroid.y}])
 
